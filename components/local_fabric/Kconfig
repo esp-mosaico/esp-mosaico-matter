@@ -1,0 +1,74 @@
+menu "Local Fabric"
+
+    config FABRIC_MANAGER_ENABLE
+        bool "Enable resolved device manager"
+        default y
+
+    config FABRIC_CORE_MAX_LISTENERS
+        int "Maximum core listeners"
+        range 1 16
+        default 4
+
+    config FABRIC_MANAGER_MAX_LISTENERS
+        int "Maximum device-manager listeners"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 16
+        default 4
+
+    config FABRIC_MANAGER_MAX_DEVICES
+        int "Maximum resolved devices"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 64
+        default 16
+
+    config FABRIC_MANAGER_MAX_ENDPOINTS
+        int "Maximum reported endpoints"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 128
+        default 32
+
+    config FABRIC_MANAGER_MAX_CLUSTERS_PER_ENDPOINT
+        int "Maximum selected clusters per endpoint"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 32
+        default 16
+        help
+            Bounds selected cluster adapters and the per-endpoint cluster mask.
+
+    config FABRIC_MANAGER_MAX_REPORT_FIELDS_PER_ENDPOINT
+        int "Maximum selected report fields per endpoint"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 64
+        default 16
+        help
+            Bounds decoded semantic property fields retained for each endpoint
+            in one atomic report transaction. Higher values increase heap use.
+
+    config FABRIC_MANAGER_MAX_DEVICE_TYPES_PER_ENDPOINT
+        int "Maximum Matter device types per endpoint"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 16
+        default 4
+        help
+            Bounds Descriptor DeviceTypeList entries retained per endpoint.
+            Reports exceeding this limit are rejected atomically.
+
+    config FABRIC_MANAGER_MAX_TAGS_PER_ENDPOINT
+        int "Maximum Matter semantic tags per endpoint"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 16
+        default 4
+        help
+            Bounds Descriptor TagList entries inspected for an endpoint name.
+            Additional tags are ignored; tags never determine topology validity.
+
+    config FABRIC_MANAGER_MAX_REPORT_RELATIONSHIPS
+        int "Maximum Matter parent-child relationships per report"
+        depends on FABRIC_MANAGER_ENABLE
+        range 1 256
+        default 64
+        help
+            Bounds Descriptor PartsList relationships retained in one atomic
+            report transaction. Higher values increase transaction heap use.
+
+endmenu

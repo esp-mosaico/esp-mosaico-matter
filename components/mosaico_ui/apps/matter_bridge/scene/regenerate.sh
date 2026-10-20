@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
+set -euo pipefail
+GSPC="${GSPC:?set GSPC to the GSPC executable}"
+cd "$(dirname "$0")"
+GSP_ROOT="${GSP_ROOT:-${ESP_GSP_ROOT:-$(cd ../../../../.. && pwd)/examples/matter_hub/managed_components/espressif__esp-gsp}}"
+export PYTHONPATH="$GSP_ROOT/tools${PYTHONPATH:+:$PYTHONPATH}"
+PROFILE="${MOSAIC_SCENE_PROFILE:-$(cd ../../../common && pwd)/mosaic_rgb565_auto.yaml}"
+STEM=matter_bridge
+APP_DIR="$(cd .. && pwd)"
+GENERATED_DIR="${MOSAIC_GENERATED_DIR:-$APP_DIR/generated}"
+
+python3 gen_scene.py
+OUT=$(mktemp -d)
+trap 'rm -rf "$OUT"' EXIT
+mkdir -p "$GENERATED_DIR"
+
+"$GSPC" build "${STEM}_480.json" --scene-id 0 \
+    --profile "$PROFILE" -o "$OUT"
+"$GSPC" bundle -o "$GENERATED_DIR/${STEM}_480.gspb" \
+    "$OUT/${STEM}.gsb" \
+    "$OUT"/${STEM}_font*.gfb \
+    $(if [[ -f "$OUT/${STEM}.grb" ]]; then echo "$OUT/${STEM}.grb"; fi)
+
+cp "$OUT/${STEM}_binds.h" "$GENERATED_DIR/${STEM}_binds.h"
+cp "$OUT/${STEM}_actions.h" "$GENERATED_DIR/${STEM}_actions.h"
+cp "$OUT/${STEM}_objects.h" "$GENERATED_DIR/${STEM}_objects.h"
+chmod 0644 "$GENERATED_DIR/${STEM}_480.gspb" \
+    "$GENERATED_DIR/${STEM}_binds.h" \
+    "$GENERATED_DIR/${STEM}_actions.h" \
+    "$GENERATED_DIR/${STEM}_objects.h"
+
+echo "app bundle: $GENERATED_DIR/${STEM}_480.gspb"

@@ -1,0 +1,105 @@
+# Mosaico hardware bring-up (flash/PSRAM/partition table/display), lifted
+# from examples/matter_hub/boards/esp_mosaico/sdkconfig.defaults.board.
+# Deliberately excludes that file's Matter controller/commissioner and
+# OpenThread Border Router config -- on this board, matter_bridge only ever
+# runs a bridge (Matter server), never a controller, and has no Thread role.
+# Camera sensor modes come from the upstream esp_mosaico board defaults.
+#
+# Board Manager defaults take precedence over the project's sdkconfig.defaults
+# for overlapping keys.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16MB.csv"
+
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_250M=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_SPIRAM_MEMTEST=n
+
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y
+
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+CONFIG_APP_CLAW_LUA_DRIVER_ADC=n
+CONFIG_APP_CLAW_LUA_MODULE_MAGNETOMETER=y
+CONFIG_LUA_MODULE_MAGNETOMETER_CHIP_BMM150=y
+
+# BLE host: the upstream esp_mosaico board defaults select Bluedroid with
+# Classic/A2DP audio, which wins over this example's shared
+# sdkconfig.defaults. Matter only builds (and is only patched for) the NimBLE
+# path, so re-assert NimBLE here -- peripheral/advertiser roles only, since
+# this example is a Matter server that is commissioned, never a commissioner.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_CONTROLLER_ENABLED=y
+# CONFIG_BT_BLUEDROID_ENABLED is not set
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+# CONFIG_BT_NIMBLE_ROLE_CENTRAL is not set
+# CONFIG_BT_NIMBLE_ROLE_OBSERVER is not set
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MAX_BONDS=2
+# CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY is not set
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+# CONFIG_BTDM_CTRL_MODE_BTDM is not set
+CONFIG_BT_BLE_ENABLED=y
+# CONFIG_BT_CLASSIC_ENABLED is not set
+# CONFIG_BT_A2DP_ENABLE is not set
+# CONFIG_BT_AVRCP_ENABLED is not set
+# CONFIG_BT_HFP_ENABLE is not set
+# CONFIG_BT_PBAC_ENABLED is not set
+# CONFIG_ESP_BT_AUDIO_GMF_IO_SUPPORT is not set
+CONFIG_AUDIO_DECODER_SBC_SUPPORT=y
+CONFIG_AUDIO_DECODER_AAC_SUPPORT=y
+CONFIG_AUDIO_DECODER_MP3_SUPPORT=y
+# CONFIG_MOSAICO_UI_BLUETOOTH_AUDIO is not set
+
+# The native 480x480 Mosaic/GSP UI owns the display on esp_mosaico.
+CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE=y
+# mosaico_hotplug_bridge pulls in esp-mosaico-bsp (for the module manager and
+# the interact-module driver), whose display support would additionally pull
+# espressif/esp_lvgl_adapter 0.6.2 -- incompatible with the lvgl 9.5 this
+# project resolves. The display belongs to display_service/GSP here, so the
+# BSP never drives it.
+CONFIG_BSP_DISPLAY_ENABLE=n
+# Keep image decoding on the render task until the async decoder's
+# app-switch lifetime synchronization is fixed.
+CONFIG_ESP_GSP_ENABLE_ASYNC_DECODE=n
+CONFIG_LV_DEF_REFR_PERIOD=16
+CONFIG_DISPLAY_SERVICE_PRESENT_TE_ENABLE=y
+CONFIG_DISPLAY_SERVICE_PRESENT_TE_GPIO=43
+
+CONFIG_SPI_FLASH_AUTO_SUSPEND=y
+CONFIG_SPI_FLASH_SUSPEND_TSUS_VAL_US=50
+CONFIG_SPI_FLASH_SUSPEND_TRS_VAL_US=50
+
+CONFIG_TINYUSB_CDC_ENABLED=y
+
+# Same upstream quirc/tda-2030 link conflict noted in matter_hub's board
+# file: not used by this example either.
+CONFIG_LUA_MODULE_VISION_COLOR_DETECT=n
+CONFIG_LUA_MODULE_VISION_QRCODE_DETECT=n
+
+CONFIG_LWIP_LOCAL_HOSTNAME="mosaico-matter-bridge"
+
+# One esp-mosaico interaction module (hot-plug) occupies 3 of these on its
+# own (LED0/1/2), one slot is used by the camera, and the rest are headroom
+# for chat/skill-added devices. Keep the dynamic endpoint limit two higher
+# for the root and aggregator endpoints.
+CONFIG_MATTER_BRIDGE_MAX_DEVICES=9
+CONFIG_ESP_MATTER_MAX_DYNAMIC_ENDPOINT_COUNT=11
+CONFIG_MBEDTLS_SSL_PROTO_DTLS=y
+CONFIG_MBEDTLS_SSL_DTLS_SRTP=y
+CONFIG_MBEDTLS_X509_CREATE_C=y
+CONFIG_ESP_H264_S31_USE_ASM=y
+
+# WebRTC signaling uses Matter large-payload CASE sessions over TCP. Allow
+# enough room for SDP offers/answers (the Matter default is only 1530 bytes).
+CONFIG_ENABLE_TCP_TRANSPORT=y
+CONFIG_MAX_LARGE_BUFFER_SIZE_BYTES=10000

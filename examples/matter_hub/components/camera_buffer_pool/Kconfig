@@ -1,0 +1,23 @@
+menu "Camera buffer pool"
+
+    config CAMERA_BUFFER_POOL_ENABLE
+        bool "Reserve camera image buffers at startup"
+        depends on SPIRAM && IDF_TARGET_ESP32S31
+        default n
+
+    config CAMERA_BUFFER_POOL_CAPTURE_BYTES
+        int "Capture arena and discard-buffer capacity, each in bytes"
+        depends on CAMERA_BUFFER_POOL_ENABLE
+        range 614400 8388608
+        default 1843200
+        help
+            Supports one 1280x720 YUV422 frame or two 640x480 frames.
+            An equally sized discard buffer keeps DMA away from borrowed frames.
+
+    config CAMERA_BUFFER_POOL_PREVIEW_BYTES
+        int "Capacity of each of the two preview buffers, in bytes"
+        depends on CAMERA_BUFFER_POOL_ENABLE
+        range 460800 4194304
+        default 460800
+
+endmenu

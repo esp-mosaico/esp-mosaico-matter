@@ -1,0 +1,7 @@
+dependencies:
+  cap_lua:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_capabilities/cap_lua
+  espressif/cjson:
+    version: "^1.7.19"
+  georgik/lua:
+    version: "^5.5.0~7"

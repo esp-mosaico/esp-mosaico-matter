@@ -1,0 +1,11 @@
+menu "Matter Bridge"
+    config MATTER_BRIDGE_MAX_DEVICES
+        int "Maximum catalogued bridged devices"
+        range 1 16
+        default 3
+        help
+            Total persistent catalog capacity, including chat/skill devices
+            and custom/native devices. Each active device costs one Matter
+            dynamic endpoint. CONFIG_ESP_MATTER_MAX_DYNAMIC_ENDPOINT_COUNT
+            must be at least this value plus the root and aggregator endpoints.
+endmenu

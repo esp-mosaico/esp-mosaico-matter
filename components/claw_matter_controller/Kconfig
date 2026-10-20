@@ -1,0 +1,36 @@
+menu "CLAW Matter controller"
+    depends on FABRIC_MANAGER_ENABLE
+
+    config CLAW_MATTER_LUA_ENABLE
+        bool "Expose semantic Matter operations to Lua"
+        depends on APP_CLAW_CAP_LUA
+        default y
+        help
+            Register the operation-only `matter` Lua module. Automation and
+            durable configuration remain owned by the upper application.
+
+    config CLAW_MATTER_MAX_EVENT_SUBSCRIPTIONS
+        int "Maximum transient event subscriptions"
+        range 1 64
+        default 16
+
+    config CLAW_MATTER_EVENT_MAX_CHANGES
+        int "Maximum changes in one committed batch"
+        range 1 128
+        default 16
+        help
+            A larger committed report batch is dropped in full.
+
+    config CLAW_MATTER_EVENT_QUEUE_DEPTH
+        int "Pending committed-batch queue depth"
+        range 1 32
+        default 4
+
+    config CLAW_MATTER_EVENT_VALUE_JSON_MAX
+        int "Maximum copied JSON bytes per value"
+        range 32 1024
+        default 256
+        help
+            A value exceeding this bound drops the complete committed batch.
+
+endmenu

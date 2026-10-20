@@ -1,0 +1,28 @@
+# ESP-IDF generated output
+examples/*/build/
+examples/*/build-*/
+examples/*/managed_components/
+examples/*/components/gen_bmgr_codes/
+examples/*/sdkconfig
+examples/*/sdkconfig.old
+examples/*/dependencies.lock
+
+# Python tooling output
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Board manager / tooling cache
+examples/*/.cache/
+
+# clangd
+.cache/clangd/**
+
+# log
+*.log

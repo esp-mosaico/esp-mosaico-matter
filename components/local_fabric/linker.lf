@@ -1,0 +1,17 @@
+# ESP-Matter's Component Registry package combines CHIP and ESP-Matter into one
+# archive. Keep its zero-initialized static state in PSRAM when external BSS is
+# enabled; dynamic allocations are controlled by the corresponding Kconfig
+# allocation modes.
+[mapping:esp_matter_chip_bss]
+archive: libespressif__esp_matter.a
+entries:
+    if SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+# ESP-Matter 1.6 defines its controller singleton in a header, so the instance
+# is emitted by the Local Fabric translation unit that first uses it.
+[mapping:local_fabric_chip_bss]
+archive: liblocal_fabric.a
+entries:
+    if SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
