@@ -19,4 +19,11 @@ Matter clusters `0x0054` and `0x0055` are published as `rvc_run_mode` and `rvc_c
 }
 ```
 
-`mode.value` is `null` until reported. If `SupportedModes` has not been reported, or exceeds the bounded mode table, the current numeric mode remains visible but `set_mode` is not advertised. Labels are device-provided and bounded to the UI's available storage; unknown current modes display `Mode N`. Invocations validate the ID against the reported choices and call `ChangeToMode`.
+- `mode.value` is `null` until reported. Unknown current modes display `Mode N`.
+- `set_mode` is advertised after a nonempty `SupportedModes` report. Lists use
+  dynamically allocated storage and support every distinct 8-bit mode ID.
+- Labels retain up to the Matter maximum of 64 UTF-8 bytes. Both UIs receive
+  the complete choices; the GSP picker allocates storage for the reported count.
+- Identical duplicate IDs/labels are deduplicated. Conflicting duplicate IDs,
+  invalid labels, and decoding/allocation failures leave prior mode metadata intact.
+- Invocations validate the ID against the reported choices and call `ChangeToMode`.

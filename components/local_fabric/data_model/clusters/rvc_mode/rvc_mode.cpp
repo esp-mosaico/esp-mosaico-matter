@@ -10,9 +10,9 @@
 #include <app-common/zap-generated/cluster-objects.h>
 #include <app/data-model/Decode.h>
 
-#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 namespace data_model::clusters::rvc_mode {
 namespace {
@@ -23,57 +23,58 @@ constexpr uint32_t kSupportedModesAttributeId = UINT32_C(0x0000);
 constexpr uint32_t kCurrentModeAttributeId = UINT32_C(0x0001);
 constexpr uint32_t kChangeToModeCommandId = UINT32_C(0x0000);
 
-constexpr size_t kMaxModes = 8;
-struct mode_option {
-    uint8_t id;
-    char label[18];
-};
 struct state {
     bool reported;
-    bool modes_reported;
     uint8_t mode;
-    uint8_t mode_count;
-    mode_option modes[kMaxModes];
 };
 static_assert(sizeof(state) <= FABRIC_MANAGER_CLUSTER_STATE_MAX);
 
+const cJSON *find_mode(const cJSON *modes, uint8_t id)
+{
+    const cJSON *choice = nullptr;
+    cJSON_ArrayForEach(choice, modes) {
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive(choice, "value");
+        if (value && value->valueint == id) return choice;
+    }
+    return nullptr;
+}
+
 template <typename Modes>
-CHIP_ERROR decode_supported_modes(chip::TLV::TLVReader &reader, state &current)
+CHIP_ERROR decode_supported_modes(chip::TLV::TLVReader &reader,
+                                   cluster_state *storage)
 {
     Modes values;
     ReturnErrorOnFailure(chip::app::DataModel::Decode(reader, values));
-    state updated = current;
-    updated.mode_count = 0;
-    updated.modes_reported = true;
+    using json_owner = std::unique_ptr<cJSON, decltype(&cJSON_Delete)>;
+    json_owner modes(cJSON_CreateArray(), cJSON_Delete);
+    VerifyOrReturnError(modes, CHIP_ERROR_NO_MEMORY);
     auto iterator = values.begin();
     while (iterator.Next()) {
-        if (updated.mode_count >= kMaxModes) {
-            updated.modes_reported = false; // Never offer an incomplete picker.
+        const auto &option = iterator.GetValue();
+        // Matter ModeOptionStruct labels are at most 64 UTF-8 bytes.
+        char label[65];
+        VerifyOrReturnError(option.label.size() < sizeof(label),
+                            CHIP_ERROR_INVALID_TLV_ELEMENT);
+        memcpy(label, option.label.data(), option.label.size());
+        label[option.label.size()] = '\0';
+        if (!option.label.size()) snprintf(label, sizeof(label), "Mode %u", option.mode);
+        const cJSON *previous = find_mode(modes.get(), option.mode);
+        if (previous) {
+            const cJSON *previous_label = cJSON_GetObjectItemCaseSensitive(previous, "label");
+            VerifyOrReturnError(!strcmp(previous_label->valuestring, label),
+                                CHIP_ERROR_INVALID_TLV_ELEMENT);
             continue;
         }
-        const auto &option = iterator.GetValue();
-        for (size_t i = 0; i < updated.mode_count; ++i) {
-            if (updated.modes[i].id == option.mode) {
-                updated.modes_reported = false;
-                break;
-            }
-        }
-        auto &choice = updated.modes[updated.mode_count++];
-        choice.id = option.mode;
-        size_t length = option.label.size() < sizeof(choice.label)
-                            ? option.label.size() : sizeof(choice.label) - 1;
-        // Do not split a UTF-8 code point when shortening device text.
-        if (length < option.label.size()) {
-            while (length &&
-                   (static_cast<unsigned char>(option.label.data()[length]) & 0xc0) == 0x80)
-                --length;
-        }
-        memcpy(choice.label, option.label.data(), length);
-        choice.label[length] = '\0';
-        if (!length) snprintf(choice.label, sizeof(choice.label), "Mode %u", choice.id);
+        json_owner choice(cJSON_CreateObject(), cJSON_Delete);
+        VerifyOrReturnError(choice &&
+                            cJSON_AddNumberToObject(choice.get(), "value", option.mode) &&
+                            cJSON_AddStringToObject(choice.get(), "label", label) &&
+                            cJSON_AddItemToArray(modes.get(), choice.get()),
+                            CHIP_ERROR_NO_MEMORY);
+        choice.release();
     }
     ReturnErrorOnFailure(iterator.GetStatus());
-    current = updated;
+    VerifyOrReturnError(storage->metadata.reset(modes.release()), CHIP_ERROR_NO_MEMORY);
     return CHIP_NO_ERROR;
 }
 
@@ -86,10 +87,10 @@ CHIP_ERROR decode_attribute(uint32_t attribute_id,
     if (attribute_id == kSupportedModesAttributeId) {
         if constexpr (ClusterId == kRunModeClusterId) {
             using Modes = chip::app::Clusters::RvcRunMode::Attributes::SupportedModes::TypeInfo::DecodableType;
-            return decode_supported_modes<Modes>(reader, current);
+            return decode_supported_modes<Modes>(reader, storage);
         } else {
             using Modes = chip::app::Clusters::RvcCleanMode::Attributes::SupportedModes::TypeInfo::DecodableType;
-            return decode_supported_modes<Modes>(reader, current);
+            return decode_supported_modes<Modes>(reader, storage);
         }
     }
     if (attribute_id != kCurrentModeAttributeId) return CHIP_ERROR_NOT_FOUND;
@@ -98,18 +99,13 @@ CHIP_ERROR decode_attribute(uint32_t attribute_id,
     return CHIP_NO_ERROR;
 }
 
-const char *mode_label(const state &current, uint8_t id)
-{
-    for (size_t i = 0; i < current.mode_count; ++i)
-        if (current.modes[i].id == id) return current.modes[i].label;
-    return nullptr;
-}
-
 esp_err_t encode_json(const cluster_state *storage, cJSON *properties,
                       cJSON *actions)
 {
     const auto &current = *reinterpret_cast<const state *>(storage->bytes);
-    const char *label = current.reported ? mode_label(current, current.mode) : nullptr;
+    const cJSON *modes = storage->metadata.get();
+    const cJSON *choice = current.reported ? find_mode(modes, current.mode) : nullptr;
+    const cJSON *label = choice ? cJSON_GetObjectItemCaseSensitive(choice, "label") : nullptr;
     ESP_RETURN_ON_ERROR(
         json::add_property(properties, "mode",
                            current.reported ? cJSON_CreateNumber(current.mode)
@@ -119,25 +115,19 @@ esp_err_t encode_json(const cluster_state *storage, cJSON *properties,
         cJSON *mode = cJSON_GetObjectItemCaseSensitive(properties, "mode");
         char fallback[18];
         snprintf(fallback, sizeof(fallback), "Mode %u", current.mode);
-        if (!cJSON_AddStringToObject(mode, "label", label ? label : fallback))
+        if (!cJSON_AddStringToObject(mode, "label", label ? label->valuestring : fallback))
             return ESP_ERR_NO_MEM;
     }
-    if (!current.modes_reported || !current.mode_count) return ESP_OK;
+    if (!modes || !cJSON_GetArraySize(modes)) return ESP_OK;
     cJSON *arguments = json::add_action(actions, "set_mode");
     if (!arguments) return ESP_ERR_NO_MEM;
     ESP_RETURN_ON_ERROR(json::add_integer_argument(arguments, "mode", 0, 255),
                         "rvc_mode", "encode mode argument");
     cJSON *mode = cJSON_GetObjectItemCaseSensitive(arguments, "mode");
-    cJSON *values = cJSON_AddArrayToObject(mode, "enum");
-    if (!values) return ESP_ERR_NO_MEM;
-    for (size_t i = 0; i < current.mode_count; ++i) {
-        cJSON *choice = cJSON_CreateObject();
-        if (!choice || !cJSON_AddNumberToObject(choice, "value", current.modes[i].id) ||
-            !cJSON_AddStringToObject(choice, "label", current.modes[i].label)) {
-            cJSON_Delete(choice);
-            return ESP_ERR_NO_MEM;
-        }
-        cJSON_AddItemToArray(values, choice);
+    cJSON *values = cJSON_Duplicate(modes, true);
+    if (!values || !cJSON_AddItemToObject(mode, "enum", values)) {
+        cJSON_Delete(values);
+        return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
 }
@@ -157,13 +147,8 @@ esp_err_t invoke_action(
     if (!json::integer(json::only(arguments, "mode"), 0, 255, &mode)) {
         return ESP_ERR_INVALID_ARG;
     }
-    const auto &current = *reinterpret_cast<const state *>(storage->bytes);
-    bool supported = false;
-    if (current.modes_reported) {
-        for (size_t i = 0; i < current.mode_count; ++i)
-            supported |= current.modes[i].id == mode;
-    }
-    if (!supported) return ESP_ERR_INVALID_ARG;
+    if (!find_mode(storage->metadata.get(), static_cast<uint8_t>(mode)))
+        return ESP_ERR_INVALID_ARG;
     char command[24] = {};
     const int length = snprintf(command, sizeof(command), "{\"0:U8\":%u}",
                                 static_cast<unsigned>(mode));
