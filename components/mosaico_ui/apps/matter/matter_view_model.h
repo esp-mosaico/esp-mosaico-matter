@@ -19,7 +19,6 @@ extern "C" {
 #define MATTER_VM_TEXT_MAX 64U
 #define MATTER_VM_VALUE_MAX 96U
 #define MATTER_VM_ACTION_ARGUMENT_MAX 2U
-#define MATTER_VM_ENUM_MAX 12U
 
 typedef struct {
     fabric_manager_device_id_t id;
@@ -66,8 +65,8 @@ typedef struct {
     double min;
     double max;
     size_t enum_count;
-    char enum_values[MATTER_VM_ENUM_MAX][MATTER_VM_TEXT_MAX];
-    int32_t enum_ids[MATTER_VM_ENUM_MAX];
+    char **enum_values;
+    int32_t *enum_ids;
 } matter_vm_argument_t;
 
 typedef struct {
