@@ -1,0 +1,14 @@
+## Hot-plug accessory detection for esp-mosaico module slots, feeding the
+## existing claw_matter_bridge device-management API instead of talking to
+## esp_matter_bridge/matter_bridge directly. Each accessories/<name>
+## that needs a BSP driver adds its mosaico_module_* path here.
+dependencies:
+  idf: ">=6.0"
+  mosaico_module_mgr:
+    path: ../../../../third_party/esp-mosaico-bsp/components/mosaico_module_mgr
+  esp-mosaico-bsp:
+    version: "^0.2"
+    override_path: ../../../../third_party/esp-mosaico-bsp/components/esp-mosaico-bsp
+  espressif/led_strip: "^3.0.3"
+  mosaico_matter_camera:
+    path: ../mosaico_matter_camera

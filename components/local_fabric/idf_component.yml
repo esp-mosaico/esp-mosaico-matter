@@ -1,0 +1,5 @@
+dependencies:
+  espressif/esp_matter:
+    version: "1.6.0"
+  espressif/cjson:
+    version: "^1.7.19"

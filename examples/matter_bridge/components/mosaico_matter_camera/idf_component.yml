@@ -1,0 +1,15 @@
+version: "0.1.0"
+description: Matter camera endpoint and WebRTC media pipeline for ESP-Mosaico
+license: Apache-2.0
+
+targets:
+  - esp32s31
+
+dependencies:
+  idf: ">=6.2"
+  espressif/esp_peer: "1.5.3"
+  espressif/esp_video_codec: "~0.5"
+  mosaico_module_camera:
+    path: ../../../../third_party/esp-mosaico-bsp/components/mosaico_module_camera
+  matter_bridge:
+    path: ../../../../components/matter_bridge

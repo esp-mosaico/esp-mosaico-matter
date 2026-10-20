@@ -1,0 +1,105 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp_board_manager:
+    version: "^0.6"
+    public: true
+
+  espressif/bq27220: "^0.1.0"
+
+  # The optional non-GSP status display uses these directly.
+  espressif/esp_lvgl_adapter: "*"
+  espressif/esp_video_render: "^1.0"
+  espressif/freetype: "*"
+
+  local_fabric:
+    path: ../../../components/local_fabric
+
+  claw_matter_controller:
+    path: ../../../components/claw_matter_controller
+
+  app_claw:
+    path: ../../../third_party/esp-mosaico-claw/components/app_claw
+
+  cap_im_ai_create:
+    rules:
+    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    path: ../../../third_party/esp-mosaico-claw/components/cap_im_ai_create
+
+  audio_hub:
+    path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/audio_hub
+
+  asr_service:
+    rules:
+    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    path: ../../../third_party/esp-mosaico-claw/components/asr_service
+
+  app_config:
+    path: ../../../third_party/esp-mosaico-claw/components/app_config
+
+  trial_provider:
+    path: ../../../third_party/esp-mosaico-claw/components/trial_provider
+
+  cap_system:
+    path: ../../../third_party/esp-mosaico-claw/components/cap_system
+
+  cap_im_platform:
+    path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_capabilities/cap_im_platform
+
+  captive_dns:
+    path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/captive_dns
+
+  espressif/ramfs:
+    version: "^0.1"
+
+  joltwallet/littlefs:
+    version: "^1.22.0"
+
+  claw_utils:
+    path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_modules/claw_utils
+
+  mosaico_ui:
+    rules:
+    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    path: ../../../components/mosaico_ui
+
+  display_service:
+    rules:
+    - if: $CONFIG{ESP_BOARD_DEV_DISPLAY_LCD_SUPPORT} == True
+    path: ../../../third_party/esp-mosaico-claw/components/display_service
+
+  network_provisioning_service:
+    rules:
+    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    path: ../../../third_party/esp-mosaico-claw/components/network_provisioning_service
+
+  weather_service:
+    rules:
+    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    path: ../../../third_party/esp-mosaico-claw/components/weather_service
+
+  update_check_service:
+    rules:
+    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    path: ../../../third_party/esp-mosaico-claw/components/update_check_service
+
+  wechat_binding_service:
+    rules:
+    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    path: ../../../third_party/esp-mosaico-claw/components/wechat_binding_service
+
+  http_reuse:
+    path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/http_reuse
+
+  # Vendored under esp-mosaico-matter/components/ — the esp-mosaico-claw http_server
+  # plus the Manager-backed Matter Fabric REST API and web page.
+  http_server:
+    path: ../../../components/http_server
+
+  # mosaico_camera_service is auto-discovered from EXTRA_COMPONENT_DIRS and
+  # linked after Kconfig is loaded.
+
+  settings:
+    path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/settings
+
+  wifi_manager:
+    path: ../../../third_party/esp-mosaico-claw/components/wifi_manager

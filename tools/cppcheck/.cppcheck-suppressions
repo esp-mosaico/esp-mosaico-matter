@@ -1,0 +1,11 @@
+# Cppcheck 2.13 misreads `auto *p = new (std::nothrow) T{}` as using p
+# before initialization. Reproduced with a standalone aggregate and <new>.
+# Keep these limited to the three affected files; recheck on tool upgrades.
+legacyUninitvar:components/claw_matter_bridge/src/claw_matter_bridge.cpp
+legacyUninitvar:components/matter_bridge/core/bridge_core.cpp
+legacyUninitvar:components/matter_bridge/dev_mngr/bridge_dev_mngr.cpp
+
+# Each DIR is opened and consumed locally. ESP-IDF's VFS implementations keep
+# the returned dirent in that DIR (vfs_fat_readdir/vfs_spiffs_readdir), so these
+# calls do not share the static buffer assumed by the generic POSIX model.
+readdirCalled:components/http_server/http_server_files_api.c

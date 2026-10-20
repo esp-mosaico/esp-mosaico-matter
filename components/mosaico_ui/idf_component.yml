@@ -1,0 +1,42 @@
+## Mosaic/GSP system UI backed by the shared display_service presenter.
+## Matter-controller vs Matter-bridge backends are chosen per consuming
+## project via MOSAICO_UI_WITH_* CMake optional_requires (see CMakeLists.txt),
+## not via path dependencies here -- otherwise examples/matter_bridge would
+## pull Local Fabric into the component graph.
+dependencies:
+  espressif/quirc:
+    version: "1.2.0"
+  idf: ">=6.2"
+  display_service:
+    path: ../../third_party/esp-mosaico-claw/components/display_service
+  audio_hub:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/audio_hub
+  audio_playback:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/audio_playback
+  asr_service:
+    path: ../../third_party/esp-mosaico-claw/components/asr_service
+  cap_im_ai_create:
+    path: ../../third_party/esp-mosaico-claw/components/cap_im_ai_create
+  mosaico_camera_service:
+    path: ../../third_party/esp-mosaico-claw/components/mosaico_camera_service
+  weather_service:
+    path: ../../third_party/esp-mosaico-claw/components/weather_service
+  claw_core:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_modules/claw_core
+  claw_memory:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_modules/claw_memory
+  claw_manager:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_modules/claw_manager
+  app_registry:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/app_registry
+  cap_lua:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_capabilities/cap_lua
+  espressif/esp-gsp:
+    # Update the runtime and its published GSPC release together.
+    version: "1.6.0"
+    require: public
+  espressif/esp_mmap_assets:
+    version: "2.0.1"
+  georgik/lua: "^5.5.0~7"
+  espressif/esp_audio_codec: "^2.5.0"
+  espressif/esp_asrc: "^1.0.0"

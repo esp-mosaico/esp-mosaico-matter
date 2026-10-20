@@ -1,0 +1,32 @@
+menu "Matter bridge example"
+    config MATTER_BRIDGE_ROUTER_STACK_SIZE
+        int "Event router stack size (bytes)"
+        range 16384 65536
+        default 24576
+        help
+            Stack budget for routing chat messages through the agent manager,
+            session storage and outbound capabilities. The router prefers a
+            PSRAM stack; keep PSRAM XiP enabled for flash access from this task.
+    config APP_WIFI_SSID
+        string
+        default ""
+    config APP_WIFI_PASSWORD
+        string
+        default ""
+    config APP_SEARCH_HTTP_ALLOWLIST
+        string "HTTP request allowlist"
+        default ""
+
+    config APP_CLAW_MOSAIC_GSP_ENABLE
+        bool "esp-gsp Mosaic UI"
+        depends on ESP_BOARD_DEV_DISPLAY_LCD_SUPPORT
+        depends on APP_CLAW_CAP_CORE
+        depends on APP_CLAW_CAP_SKILL_MGR
+        depends on APP_CLAW_CAP_IM_WECHAT
+        select MOSAICO_UI_ENABLE
+        default n
+        help
+            The 480x480 Mosaic GSP touch UI (pairing QR, bridged-device
+            status, settings) plus esp-mosaico module hot-plug detection.
+            Enabled by boards/esp_mosaico/sdkconfig.defaults.board.
+endmenu

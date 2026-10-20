@@ -1,0 +1,12 @@
+version: "1.0"
+description: "matter_bridge overrides for the esp_mosaico board: BLE-peripheral Matter server (no controller, no Thread) + 480x480 Mosaic GSP UI + esp-mosaico module hot-plug"
+
+# Auto-applied by `idf.py bmgr` whenever this directory sits on a `-c` path and
+# the selected board is named `esp_mosaico` (its definition lives in the
+# esp-mosaico-claw submodule; this overlay is layered on top). Deliberately
+# does not enable the Matter controller/commissioner or OpenThread Border
+# Router config that examples/matter_hub/boards/esp_mosaico/board_amend.yaml
+# does -- this example only ever runs a bridge (Matter server), never a
+# controller.
+apply:
+  - sdkconfig.defaults.board

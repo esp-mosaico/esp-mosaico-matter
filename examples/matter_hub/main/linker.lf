@@ -1,0 +1,58 @@
+# Task-owned application state. Do not apply this scheme to whole libraries:
+# their other objects may hold ISR state or hardware/DMA descriptors.
+[scheme:mosaico_app_state]
+entries:
+    bss -> extern_ram
+
+[mapping:mosaico_matter_engine]
+archive: libespressif__esp_matter.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        InteractionModelEngine: _ZN4chip3app23sInteractionModelEngineE (mosaico_app_state)
+
+[mapping:mosaico_claw_config]
+archive: libapp_claw.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        app_claw: s_current_config (mosaico_app_state)
+
+[mapping:mosaico_trial_tokens]
+archive: libtrial_provider.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        trial_auth: s_asr_token_cache (mosaico_app_state)
+        trial_auth: s_llm_token_cache (mosaico_app_state)
+
+[mapping:mosaico_agent_manager]
+archive: libclaw_manager.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        claw_agent_mgr: s_mgr (mosaico_app_state)
+
+# UI models and text caches are only used by tasks. Keep their separate
+# portMUX locks and all hardware-facing state in internal RAM.
+[mapping:mosaico_ui_models]
+archive: libmosaico_ui.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        setup_center_app: s_setup (mosaico_app_state)
+        settings_app: s_update_note_lines (mosaico_app_state)
+        settings_app: s_wlan_networks (mosaico_app_state)
+        mosaic_hub_app: s_weather_info (mosaico_app_state)
+
+# Matter's task-owned discovery and peer tables; no BLE/controller state.
+[mapping:mosaico_matter_discovery]
+archive: libespressif__esp_matter.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        SessionManager: _ZN4chip12_GLOBAL__N_1L15gGroupPeerTableE (mosaico_app_state)
+        Discovery_ImplPlatform: _ZN4chip5Dnssd21DiscoveryImplPlatform8sManagerE (mosaico_app_state)
+        esp_matter_controller_credentials_issuer: _ZZN10esp_matter10controller22get_credentials_issuerEvE14s_creds_issuer (mosaico_app_state)
+
+# mDNS builds DNS packets here before the network layer copies them into
+# pbufs. These are task-only scratch buffers, not hardware DMA buffers.
+[mapping:mosaico_mdns_packets]
+archive: libespressif__mdns.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        mdns_send (mosaico_app_state)

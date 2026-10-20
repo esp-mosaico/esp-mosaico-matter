@@ -1,0 +1,11 @@
+dependencies:
+  espressif/cjson: "^1.7.19"
+  espressif/led_strip: "^3.0.0"
+  app_claw:
+    path: ../../third_party/esp-mosaico-claw/components/app_claw
+  cap_lua:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_capabilities/cap_lua
+  claw_cap:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_modules/claw_cap
+  claw_hw_registry:
+    path: ../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/claw_hw_registry

@@ -1,0 +1,34 @@
+minimum_pre_commit_version: '3.6.0'
+
+exclude: |
+  (?x)(
+    ^third_party/|
+    (^|/)(build|managed_components|node_modules|dist|\.venv|\.cache)/|
+    \.(patch|svg)$
+  )
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff-check
+
+  - repo: local
+    hooks:
+      - id: cppcheck
+        name: cppcheck (components)
+        entry: python3 tools/cppcheck/check_cppcheck.py
+        language: system
+        files: ^(components/.*\.(c|cc|cpp|cxx|h|hpp)|tools/cppcheck/(check_cppcheck\.py|\.cppcheck-suppressions)|\.pre-commit-config\.yaml)$
+        pass_filenames: false
+        require_serial: true

@@ -1,0 +1,29 @@
+# The registry component includes both ESP-Matter and CHIP in this archive.
+# Follow ESP-Matter's BSS relocation scheme; hardware drivers retain their
+# own placement. Explicit DRAM/IRAM sections are not ordinary BSS.
+[mapping:matter_bridge_matter_bss]
+archive: libespressif__esp_matter.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+# Task-owned CLAW configuration/state. Mutex handles may move; the FreeRTOS
+# mutex objects and hardware-facing state retain their internal placement.
+[mapping:claw_matter_bridge_config_bss]
+archive: libapp_claw.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        app_claw: s_current_config (extram_bss)
+
+[mapping:claw_matter_bridge_manager_bss]
+archive: libclaw_manager.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        claw_agent_mgr: s_mgr (extram_bss)
+        claw_session_mgr: s_session_mgr (extram_bss)
+
+[mapping:claw_matter_bridge_memory_bss]
+archive: libclaw_memory.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        claw_memory: s_memory (extram_bss)

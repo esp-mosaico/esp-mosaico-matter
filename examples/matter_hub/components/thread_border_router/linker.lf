@@ -1,0 +1,14 @@
+# The UART host's OpenThread instance is accessed from tasks after PSRAM init.
+# Preserve internal RAM for FreeRTOS stacks, Wi-Fi, and DMA allocations.
+[scheme:mosaico_thread_instance]
+entries:
+    bss -> extern_ram
+
+[mapping:mosaico_thread_instance]
+archive: libopenthread.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y && OPENTHREAD_RADIO_SPINEL_UART = y:
+        instance (mosaico_thread_instance)
+        # UART ISR buffers belong to the UART driver. These Spinel objects
+        # consume decoded frames from the OpenThread task, with caches enabled.
+        esp_openthread_radio_spinel (mosaico_thread_instance)

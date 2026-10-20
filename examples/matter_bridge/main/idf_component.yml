@@ -1,0 +1,13 @@
+dependencies:
+  espressif/esp_board_manager: "^0.6"
+  joltwallet/littlefs: "^1.22.0"
+  app_claw:
+    path: ../../../third_party/esp-mosaico-claw/components/app_claw
+  app_config:
+    path: ../../../third_party/esp-mosaico-claw/components/app_config
+  http_server:
+    path: ../../../third_party/esp-mosaico-claw/components/http_server
+  claw_matter_bridge:
+    path: ../../../components/claw_matter_bridge
+  http_reuse:
+    path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/common/http_reuse
