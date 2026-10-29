@@ -3,9 +3,7 @@ menu "CLAW Matter bridge"
         hex "GPIO allowlist bit mask"
         default 0x21C00000003C30
         help
-            Mask of GPIOs available to Lua devices. The ESP-Mosaico
-            (ESP32-S31) default includes the side connector GPIOs:
-            left: 4, 12, 13, 48, 53; right: 5, 10, 11, 46, 47.
-            Shared I2C GPIO0/1 and module address-select GPIO14/39 are
-            excluded. Use only pins on a slot without a hot-plug module.
+            Mask of GPIOs available to CLAW-created devices. Select GPIOs
+            that are free and permitted for the target board; exclude pins
+            reserved for system peripherals or other hardware owners.
 endmenu

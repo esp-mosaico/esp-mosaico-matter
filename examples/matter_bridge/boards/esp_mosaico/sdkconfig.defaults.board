@@ -88,12 +88,11 @@ CONFIG_LUA_MODULE_VISION_QRCODE_DETECT=n
 
 CONFIG_LWIP_LOCAL_HOSTNAME="mosaico-matter-bridge"
 
-# One esp-mosaico interaction module (hot-plug) occupies 3 of these on its
-# own (LED0/1/2), one slot is used by the camera, and the rest are headroom
-# for chat/skill-added devices. Keep the dynamic endpoint limit two higher
-# for the root and aggregator endpoints.
-CONFIG_MATTER_BRIDGE_MAX_DEVICES=9
-CONFIG_ESP_MATTER_MAX_DYNAMIC_ENDPOINT_COUNT=11
+# Interaction module occupies 5 entries (LED0/1/2, PIR and light).
+# Camera module occupies 1 entry.
+# Dynamic endpoint capacity includes the root and aggregator endpoints.
+CONFIG_MATTER_BRIDGE_MAX_DEVICES=13
+CONFIG_ESP_MATTER_MAX_DYNAMIC_ENDPOINT_COUNT=15
 CONFIG_MBEDTLS_SSL_PROTO_DTLS=y
 CONFIG_MBEDTLS_SSL_DTLS_SRTP=y
 CONFIG_MBEDTLS_X509_CREATE_C=y

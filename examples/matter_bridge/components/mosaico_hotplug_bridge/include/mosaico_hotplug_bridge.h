@@ -2,22 +2,16 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #pragma once
 #include "esp_err.h"
+#include "bridge_dev_mngr.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Registers Lua bindings for every hot-plug accessory. Call once before
- * app_claw_start, alongside claw_matter_bridge_lua_register_module. */
-esp_err_t mosaico_hotplug_bridge_register_lua(void);
-
-/* Starts esp-mosaico module-slot hot-plug detection. On a validated PRESENT
- * event for a registered accessory board type, that accessory creates the
- * corresponding device(s) via claw_matter_bridge_add_virtual_device_json();
- * on ABSENT, it removes them. Call after claw_matter_bridge_start()
- * has returned. Chat/skill add_device rejects virtual:true so this C-only
- * method is required. To add a module type, see accessories/ and README.md. */
-esp_err_t mosaico_hotplug_bridge_start(void);
+/* Starts native accessory detection and polling. Call after the Matter core
+ * starts and legacy Lua virtual definitions have been handed to the catalog.
+ * Fixed accessories never create Lua jobs. */
+esp_err_t mosaico_hotplug_bridge_start(bridge_dev_mngr_handle_t dev_mngr);
 
 #ifdef __cplusplus
 }

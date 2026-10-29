@@ -1,7 +1,5 @@
-## Hot-plug accessory detection for esp-mosaico module slots, feeding the
-## existing claw_matter_bridge device-management API instead of talking to
-## esp_matter_bridge/matter_bridge directly. Each accessories/<name>
-## that needs a BSP driver adds its mosaico_module_* path here.
+## Native hot-plug accessory adapters use matter_bridge's shared catalog.
+## Each accessories/<name> that needs a BSP driver adds its dependency here.
 dependencies:
   idf: ">=6.0"
   mosaico_module_mgr:

@@ -277,8 +277,7 @@ void MosaicoMatterCamera::FormatDevice(uint16_t board_id, uint32_t serial,
     memset(&device, 0, sizeof(device));
     snprintf(device.id, sizeof(device.id), "mosaico-camera-%04x%08lx", board_id,
              static_cast<unsigned long>(serial));
-    snprintf(device.name, sizeof(device.name), "Mosaico Camera %04x-%08lx", board_id,
-             static_cast<unsigned long>(serial));
+    snprintf(device.name, sizeof(device.name), "Mosaico Camera");
     snprintf(device.profile_id, sizeof(device.profile_id), "%s",
              kCameraProfileId);
     device.device_type = kCameraDeviceType;
@@ -319,10 +318,18 @@ esp_err_t MosaicoMatterCamera::BuildEndpoint(void *endpoint,
 
 esp_err_t MosaicoMatterCamera::Register(bridge_dev_mngr_device_info_t &result)
 {
+    // A previous name update may have committed after its caller timed out.
+    // Resolve by stable ID before registering the same physical camera again.
+    esp_err_t error = bridge_dev_mngr_get_device(mDevMngr, mDevice.id, &result);
+    if (error == ESP_OK) {
+        if (result.definition.device_type != kCameraDeviceType ||
+            strcmp(result.definition.profile_id, kCameraProfileId)) return ESP_ERR_INVALID_STATE;
+        mDevice = result.definition;
+    } else if (error != ESP_ERR_NOT_FOUND) return error;
     DevMngrWait *wait = NewDevMngrWait();
     if (!wait) return ESP_ERR_NO_MEM;
     bridge_dev_mngr_request_id_t request_id;
-    esp_err_t error = bridge_dev_mngr_register_device(mDevMngr, &mDevice, &request_id,
+    error = bridge_dev_mngr_register_device(mDevMngr, &mDevice, &request_id,
                                                DevMngrCompleted, wait);
     return FinishDevMngrWait(wait, error, &result);
 }
@@ -445,6 +452,23 @@ esp_err_t MosaicoMatterCamera::Present(mosaico_module_mgr_slot_t slot, uint16_t 
     if (err == ESP_OK) {
         err = Activate(result);
         activated = err == ESP_OK;
+    }
+    char legacy_name[BRIDGE_DEV_MNGR_NAME_MAX];
+    snprintf(legacy_name, sizeof(legacy_name), "Mosaico Camera %04x-%08lx", board_id,
+             static_cast<unsigned long>(serial));
+    if (err == ESP_OK && !strcmp(mDevice.name, legacy_name)) {
+        DevMngrWait *wait = NewDevMngrWait();
+        if (!wait) err = ESP_ERR_NO_MEM;
+        else {
+            bridge_dev_mngr_device_update_t update{};
+            update.fields = BRIDGE_DEV_MNGR_UPDATE_NAME;
+            snprintf(update.name, sizeof(update.name), "Mosaico Camera");
+            bridge_dev_mngr_request_id_t request_id;
+            err = bridge_dev_mngr_update_device(mDevMngr, mDevice.id, &update,
+                                                &request_id, DevMngrCompleted, wait);
+            err = FinishDevMngrWait(wait, err, &result);
+            if (err == ESP_OK) mDevice = result.definition;
+        }
     }
     if (err == ESP_OK) err = SetReachable(true, &result);
     if (err != ESP_OK) {

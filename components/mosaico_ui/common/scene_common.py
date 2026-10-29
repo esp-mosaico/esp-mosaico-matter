@@ -15,6 +15,21 @@ OX = (SCREEN_W - CONTENT_W) // 2
 ASCII_PRINTABLE = "".join(chr(codepoint) for codepoint in range(32, 127))
 
 
+def namespace_objects(objects, source, target):
+    """Give a shared scene's component, binding and action references an owner."""
+    if source == target:
+        return
+    reference_keys = {"name", "bind", "callback", "template", "row_template",
+                      "target_name"}
+    for obj in objects:
+        for key, value in obj.items():
+            if key in reference_keys and isinstance(value, str):
+                if value.startswith(source + "_"):
+                    obj[key] = target + value[len(source):]
+            elif isinstance(value, list):
+                namespace_objects(value, source, target)
+
+
 def shared_charset(charset=ASCII_PRINTABLE):
     """A stable charset intended to exact-match through the font catalog."""
     return {"policy": "shared", "charset": charset}

@@ -80,6 +80,9 @@ esp_err_t attribute_read(device_record &record,
 esp_err_t attribute_report(device_record &record,
                            const bridge_dev_mngr_attribute_path_t &path,
                            const bridge_dev_mngr_value_t &value);
+esp_err_t attribute_write(device_record &record,
+                          const bridge_dev_mngr_attribute_path_t &path,
+                          const bridge_dev_mngr_value_t &value);
 esp_err_t decode_attribute_value(const esp_matter_attr_val_t &source,
                                  bridge_dev_mngr_value_t &destination);
 

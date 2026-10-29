@@ -178,6 +178,13 @@ function(mosaic_setup_bundle_generation_for_target
             "GSP_ROOT=${gsp_dir}"
             "ESP_GSP_ROOT=${gsp_dir}"
             "MOSAIC_GENERATED_DIR=${out_dir}")
+        if(MOSAIC_APP_NAME STREQUAL "mosaic-hub")
+            set(hub_thread_br 0)
+            if("${root}/apps/thread_br/app.cmake" IN_LIST app_manifests)
+                set(hub_thread_br 1)
+            endif()
+            list(APPEND regen_env "MOSAIC_HUB_THREAD_BR=${hub_thread_br}")
+        endif()
         if(DEFINED MOSAIC_SCENE_PROFILE AND
                 NOT MOSAIC_SCENE_PROFILE STREQUAL "")
             if(NOT EXISTS "${MOSAIC_SCENE_PROFILE}")

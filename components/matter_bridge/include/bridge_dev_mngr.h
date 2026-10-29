@@ -26,6 +26,7 @@ extern "C" {
 #define BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT "color_light"
 #define BRIDGE_DEV_MNGR_PROFILE_CONTACT_SENSOR "contact_sensor"
 #define BRIDGE_DEV_MNGR_PROFILE_OCCUPANCY_SENSOR "occupancy_sensor"
+#define BRIDGE_DEV_MNGR_PROFILE_ILLUMINANCE_SENSOR "illuminance_sensor"
 
 typedef struct bridge_dev_mngr *bridge_dev_mngr_handle_t;
 typedef uint32_t bridge_dev_mngr_request_id_t;
@@ -114,6 +115,7 @@ typedef enum {
     BRIDGE_DEV_MNGR_OPERATION_REMOVE,
     BRIDGE_DEV_MNGR_OPERATION_READ_ATTRIBUTE,
     BRIDGE_DEV_MNGR_OPERATION_REPORT_ATTRIBUTE,
+    BRIDGE_DEV_MNGR_OPERATION_WRITE_ATTRIBUTE,
 } bridge_dev_mngr_operation_t;
 
 typedef struct {
@@ -135,7 +137,7 @@ typedef void (*bridge_dev_mngr_request_completion_cb_t)(
     bridge_dev_mngr_handle_t dev_mngr, const bridge_dev_mngr_request_result_t *result,
     void *user_ctx);
 
-/** Remote Matter attribute change delivered after it commits. */
+/** Remote Matter or local control attribute change delivered after it commits. */
 typedef struct {
     char device_id[BRIDGE_DEV_MNGR_DEVICE_ID_MAX];
     uint16_t endpoint_id;
@@ -209,6 +211,21 @@ esp_err_t bridge_dev_mngr_read_attribute(
     bridge_dev_mngr_request_completion_cb_t completion_cb, void *user_ctx);
 
 esp_err_t bridge_dev_mngr_report_attribute(
+    bridge_dev_mngr_handle_t dev_mngr, const char *device_id,
+    const bridge_dev_mngr_attribute_path_t *path, const bridge_dev_mngr_value_t *value,
+    bridge_dev_mngr_request_id_t *out_request_id,
+    bridge_dev_mngr_request_completion_cb_t completion_cb, void *user_ctx);
+
+/**
+ * Controls an active, reachable built-in light or outlet on the Matter task.
+ * Values use Matter attribute units. Supports OnOff, CurrentLevel (1..254),
+ * CurrentHue/CurrentSaturation (0..254) and ColorTemperatureMireds (within the
+ * endpoint's physical limits). Color writes also select the matching color
+ * mode. Successful changes notify drivers and Matter subscriptions.
+ * Sensor reports must continue to use report_attribute(), which does not
+ * notify control listeners. Completion follows the other asynchronous APIs.
+ */
+esp_err_t bridge_dev_mngr_write_attribute(
     bridge_dev_mngr_handle_t dev_mngr, const char *device_id,
     const bridge_dev_mngr_attribute_path_t *path, const bridge_dev_mngr_value_t *value,
     bridge_dev_mngr_request_id_t *out_request_id,

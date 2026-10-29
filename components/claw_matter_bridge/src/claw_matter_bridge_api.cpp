@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "esp_log.h"
 #include "esp_random.h"
 
 namespace claw_matter_bridge
@@ -98,7 +99,7 @@ static bool driver_valid(const cJSON *j)
     return cJSON_IsString(source) && source->valuestring[0] && strlen(source->valuestring) <= BRIDGE_MAX_SOURCE &&
         (!args || cJSON_IsObject(args));
 }
-static esp_err_t add_device(const char *input, char *out, size_t size, bool allow_virtual)
+static esp_err_t add_device(const char *input, char *out, size_t size)
 {
     if (!g_bridge || !g_bridge->runtime_started) return failure(ESP_ERR_INVALID_STATE, "Bridge not started", out, size);
     cJSON *json = cJSON_Parse(input);
@@ -106,19 +107,6 @@ static esp_err_t add_device(const char *input, char *out, size_t size, bool allo
     if (!model) { cJSON_Delete(json); return ESP_ERR_NO_MEM; }
     char message[160] = "driver_source and object driver_args required";
     esp_err_t err = driver_valid(json) ? bridge_model_parse(json, g_bridge->allowed, model, message, sizeof(message)) : ESP_ERR_INVALID_ARG;
-    if (err == ESP_OK && model->virtual_device != allow_virtual) {
-        err = ESP_ERR_INVALID_ARG;
-        snprintf(message, sizeof(message), "%s", allow_virtual
-            ? "add_virtual_device requires virtual:true"
-            : "virtual devices cannot be created through add_device");
-    }
-    /* Accessory-specific driver_args (slot, led_index, ...) are owned by
-     * mosaico_hotplug_bridge adapters, not this GPIO model. */
-    if (err == ESP_OK && allow_virtual &&
-        !cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(json, "driver_args"))) {
-        err = ESP_ERR_INVALID_ARG;
-        snprintf(message, sizeof(message), "virtual devices require object driver_args");
-    }
     if (err != ESP_OK) { cJSON_Delete(json); free(model); return failure(err, message, out, size); }
     xSemaphoreTake(g_bridge->operations, portMAX_DELAY);
     if (!g_bridge->management_enabled) {
@@ -170,6 +158,8 @@ static esp_err_t add_device(const char *input, char *out, size_t size, bool allo
     if (err == ESP_OK) err = bridge_save();
     if (err != ESP_OK) {
         snprintf(message, sizeof(message), "Creation failed: %s; %.90s", esp_err_to_name(err), e->error);
+        ESP_LOGE("claw_matter_bridge", "Failed to create %s (%s): %s",
+            e->model.device.name, e->model.device.profile_id, message);
         esp_err_t rollback = bridge_remove(e);
         if (rollback != ESP_OK) snprintf(message, sizeof(message), "Creation failed; cleanup pending: %s", esp_err_to_name(rollback));
     } else {
@@ -289,16 +279,6 @@ static esp_err_t call_allocated(operation_t operation, const char *input,
     return ESP_OK;
 }
 
-static esp_err_t add_physical(const char *input, char *output, size_t size)
-{
-    return add_device(input, output, size, false);
-}
-
-static esp_err_t add_virtual(const char *input, char *output, size_t size)
-{
-    return add_device(input, output, size, true);
-}
-
 static esp_err_t remove(const char *input, char *output, size_t size)
 {
     return device_action(ACTION_REMOVE, input, output, size);
@@ -352,18 +332,7 @@ esp_err_t claw_matter_bridge_add_device_json(const char *definition_json,
     if (!out_json) return ESP_ERR_INVALID_ARG;
     *out_json = nullptr;
     if (!definition_json) return ESP_ERR_INVALID_ARG;
-    return call_allocated(add_physical, definition_json, out_json);
-}
-
-esp_err_t
-claw_matter_bridge_add_virtual_device_json(const char *definition_json,
-                                           char **out_json)
-{
-    using namespace claw_matter_bridge;
-    if (!out_json) return ESP_ERR_INVALID_ARG;
-    *out_json = nullptr;
-    if (!definition_json) return ESP_ERR_INVALID_ARG;
-    return call_allocated(add_virtual, definition_json, out_json);
+    return call_allocated(add_device, definition_json, out_json);
 }
 
 esp_err_t claw_matter_bridge_remove_device(const char *device_id)

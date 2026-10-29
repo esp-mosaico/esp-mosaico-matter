@@ -37,3 +37,6 @@ Remote Matter writes are delivered to every registered listener. Local
 `report_attribute` calls suppress that feedback. Reachability is updated
 through `update_device` with `BRIDGE_DEV_MNGR_UPDATE_REACHABLE`, alongside other
 patchable device metadata such as the name.
+
+`write_attribute` controls built-in lights and outlets, notifying drivers and
+Matter subscribers.

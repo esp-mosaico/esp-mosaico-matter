@@ -26,9 +26,11 @@ mkdir -p "$GENERATED_DIR"
 cp "$OUT/${STEM}_binds.h" "$GENERATED_DIR/${STEM}_binds.h"
 cp "$OUT/${STEM}_actions.h" "$GENERATED_DIR/${STEM}_actions.h"
 cp "$OUT/${STEM}_objects.h" "$GENERATED_DIR/${STEM}_objects.h"
+cp "$OUT/${STEM}_templates.h" "$GENERATED_DIR/${STEM}_templates.h"
 chmod 0644 "$GENERATED_DIR/${STEM}_480.gspb" \
     "$GENERATED_DIR/${STEM}_binds.h" \
     "$GENERATED_DIR/${STEM}_actions.h" \
-    "$GENERATED_DIR/${STEM}_objects.h"
+    "$GENERATED_DIR/${STEM}_objects.h" \
+    "$GENERATED_DIR/${STEM}_templates.h"
 
 echo "app bundle: $GENERATED_DIR/${STEM}_480.gspb"

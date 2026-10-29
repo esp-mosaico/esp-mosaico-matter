@@ -14,7 +14,8 @@ without an LLM connection.
 Supported ESP-Mosaico accessories (detected automatically when connected):
 
 - [Interact module](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/user_guide_interact.html):
-  three LEDs exposed as separate on/off lights.
+  three separate color lights, a PIR occupancy sensor, and an estimated
+  illuminance sensor.
 - [Camera module](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/user_guide_camera.html):
   exposed as a Matter Camera endpoint.
 
@@ -81,15 +82,14 @@ are reused on subsequent boots. Change them through Settings when needed.
 
 ### 4. Plug in an accessory
 
-- **Interact module:** plug it into either module slot. Its three LEDs
-  appear as separate on/off lights. Unplugging removes those devices;
-  replugging creates them again. Both slots can host non-camera accessories.
+- **Interact module:** plug it into either module slot. It creates five
+  devices: three independent color lights, a PIR occupancy sensor, and a
+  light sensor. Unplugging removes those devices; replugging creates them
+  again. Both slots can host interaction modules.
 - **Camera module:** plugging it in creates one Matter Camera endpoint with
-  real video, mock Opus silence, and a fixed JPEG snapshot. Use the
-  [live view instructions](#esp-mosaico-camera-live-view) below and the
-  [camera component guide](components/mosaico_matter_camera/README.md) for mock
-  media allocation and validation. Unplugging stops streaming; the same module
-  retains its endpoint identity when plugged back in, including after a reboot.
+  real video, mock Opus silence, and a fixed JPEG snapshot. Unplugging stops
+  streaming; the same module retains its endpoint identity when plugged back
+  in, including after a reboot.
 
 Open **Matter Bridge** to see device status. The serial monitor also reports
 the camera's endpoint ID when the module becomes available.

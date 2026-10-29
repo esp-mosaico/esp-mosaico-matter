@@ -4,15 +4,13 @@
 
 idf_component_register(
     SRCS "mosaico_hotplug_bridge.c"
-         "mosaico_hotplug_devices.c"
-         "accessories/interact/interact_accessory.c"
-         "accessories/interact/interact_lua.c"
+         "mosaico_hotplug_devices.cpp"
+         "accessories/interact/interact_accessory.cpp"
+         "accessories/interact/interact_inputs.c"
          "accessories/camera/camera_accessory.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "private" "accessories/interact"
-    EMBED_TXTFILES
-        "accessories/interact/mosaico_interact_led.lua"
-    REQUIRES mosaico_module_mgr mosaico_matter_camera
-    PRIV_REQUIRES claw_matter_bridge cap_lua cjson esp_timer freertos heap
-                  esp-mosaico-bsp led_strip soc
+    REQUIRES matter_bridge mosaico_module_mgr mosaico_matter_camera
+    PRIV_REQUIRES esp_timer freertos heap nvs_flash
+                  esp-mosaico-bsp led_strip soc esp_adc esp_driver_gpio
 )

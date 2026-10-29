@@ -5,7 +5,7 @@
 extern "C" {
 #include "lauxlib.h"
 }
-#include <math.h>
+#include <cmath>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,7 +28,7 @@ static cJSON *from_lua(lua_State *L, int index, unsigned depth)
     }
     case LUA_TNUMBER: {
         double value = lua_isinteger(L, index) ? (double)lua_tointeger(L, index) : lua_tonumber(L, index);
-        return isfinite(value) ? cJSON_CreateNumber(value) : NULL;
+        return std::isfinite(value) ? cJSON_CreateNumber(value) : NULL;
     }
     case LUA_TTABLE: {
         size_t length = lua_rawlen(L, index), count = 0;

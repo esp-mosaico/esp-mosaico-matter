@@ -316,6 +316,7 @@ esp_err_t bridge_start_driver(bridge_entry_t *e)
     e->error[0] = 0;
     e->failed = false;
     e->desired.on = false;
+    e->report_initialized = false;
     e->generation++;
     e->version++;
     e->heartbeat_us = esp_timer_get_time();
@@ -338,7 +339,7 @@ esp_err_t bridge_start_driver(bridge_entry_t *e)
     char *encoded = cJSON_PrintUnformatted(args);
     cJSON_Delete(args);
     if (!encoded) { bridge_stop_driver(e); return ESP_ERR_NO_MEM; }
-    char output[192];
+    char output[192] = {};
     err = cap_lua_run_script_async(g_bridge->runner, encoded, 0, e->run_name, e->run_name, false,
                                   output, sizeof(output));
     cJSON_free(encoded);
@@ -354,7 +355,16 @@ esp_err_t bridge_start_driver(bridge_entry_t *e)
         } while (esp_timer_get_time() < deadline);
         if (err == ESP_OK) err = ESP_ERR_TIMEOUT;
     }
-    snprintf(e->error, sizeof(e->error), "Driver startup failed: %s", esp_err_to_name(err));
+    // Lua cleanup/job notifications may already have recorded the actual
+    // failure. Keep it before device creation rolls back this entry.
+    xSemaphoreTake(g_bridge->lock, portMAX_DELAY);
+    if (!e->error[0]) {
+        snprintf(e->error, sizeof(e->error), "Driver startup failed: %s; %.100s",
+            esp_err_to_name(err), output);
+    }
+    ESP_LOGE(TAG, "Driver startup failed for %s (%s): %s; %s",
+        e->model.device.name, e->model.device.id, esp_err_to_name(err), e->error);
+    xSemaphoreGive(g_bridge->lock);
     bridge_stop_driver(e);
     e->failed = true;
     return err;

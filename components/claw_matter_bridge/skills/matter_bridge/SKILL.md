@@ -14,8 +14,8 @@
 The native management component is `claw_matter_bridge`; the installed skill
 and Lua module intentionally retain the runtime name `matter_bridge`.
 
-Use the installed Lua management scripts for devices hosted by this ESP, rather than controller
-tools for remote Matter nodes. A supported Matter profile plus a Lua driver
+Use the installed Lua management scripts for GPIO-backed devices created by
+CLAW on this ESP. A supported Matter profile plus a Lua driver
 turns the user's GPIO description into a device. This does not create arbitrary
 Matter device types or clusters.
 
@@ -25,9 +25,7 @@ Matter device types or clusters.
    reserved pin or reuse another device's GPIO.
 3. Read the relevant example below and adapt its source. Submit the full Lua
    source, pin declarations, and optional `driver_args` with
-   `add_device.lua`. Do not set `virtual: true`; that flag is reserved for the
-   on-device hot-plug path (`add_virtual_device`) and `add_device` rejects it.
-   The script writes the driver and starts it;
+   `add_device.lua`. The script writes the driver and starts it;
    do not start it separately through `lua_run` or `thread.start`.
 4. Say the device was added only when the script prints `ok: true` and ready.
    Report its stable `device_id`, name and endpoint ID. Inspect errors on failure.
@@ -35,8 +33,9 @@ Matter device types or clusters.
    run `remove_device.lua` with that ID. Clarify an ambiguous description. A
    failed removal can be pending cleanup; do not claim completion.
 
-Three definitions may exist, including failed devices. Outputs start off after
-reboot. Driver failure turns outputs off and retains an unreachable endpoint.
+Use `get_info.lua` to check the device limit; failed devices also occupy entries.
+Outputs start off after reboot. Driver failure turns outputs off and retains
+an unreachable endpoint.
 Use `update_driver.lua` to repair code or `restart_device.lua`
 to explicitly retry. Updating source preserves pins, type and Matter identity;
 change hardware/type by removing and recreating the device.

@@ -12,7 +12,6 @@ namespace claw_matter_bridge
 
 esp_err_t bridge_hardware_claim(bridge_entry_t *e)
 {
-    if (e->model.virtual_device) return ESP_OK;
     char keys[BRIDGE_MAX_PINS][32];
     const char *children[BRIDGE_MAX_PINS + 1] = {0};
     char device_key[64];
@@ -72,11 +71,6 @@ esp_err_t bridge_hardware_close(bridge_entry_t *e)
 
 esp_err_t bridge_hardware_open(bridge_entry_t *e)
 {
-    if (e->model.virtual_device) {
-        e->quiesced = false;
-        e->access = true;
-        return ESP_OK;
-    }
     if (!e->lease) return ESP_ERR_INVALID_STATE;
     e->quiesced = false;
     for (size_t i = 0; i < e->model.pin_count; i++) {
