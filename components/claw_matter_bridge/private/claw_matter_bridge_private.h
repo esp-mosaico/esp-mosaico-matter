@@ -34,6 +34,7 @@ struct bridge_entry_t {
     led_strip_handle_t strips[BRIDGE_MAX_PINS];
     bool configured[BRIDGE_MAX_PINS];
     bridge_state_t desired;
+    bool report_initialized;
 };
 
 struct bridge_context_t {

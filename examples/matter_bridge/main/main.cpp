@@ -27,6 +27,7 @@
 #include "nvs_flash.h"
 #include "esp_app_desc.h"
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#include "bridge_battery.h"
 #include "mosaico_hotplug_bridge.h"
 #include "mosaico_matter_camera.h"
 #include "mosaico_ui.h"
@@ -381,6 +382,10 @@ static esp_err_t settings_forget_wifi(void *)
 {
     return configure_wifi("", "");
 }
+static esp_err_t settings_get_battery(void *, mosaic_settings_battery_t *out)
+{
+    return bridge_battery_get(out);
+}
 /* The settings contract also requires a snapshot and display/audio controls.
  * Unsupported display/audio changes return an error. */
 static esp_err_t settings_get_snapshot(void *, mosaic_settings_snapshot_t *ret_snapshot)
@@ -392,6 +397,7 @@ static esp_err_t settings_get_snapshot(void *, mosaic_settings_snapshot_t *ret_s
     ret_snapshot->volume = 100;
     ret_snapshot->display_available = true;
     ret_snapshot->audio_available = true;
+    (void)bridge_battery_get(&ret_snapshot->battery);
     (void)settings_get_wifi_status(nullptr, &ret_snapshot->network);
     auto *config = static_cast<app_config_t *>(calloc(1, sizeof(app_config_t)));
     if (!config) return ESP_ERR_NO_MEM;
@@ -451,10 +457,6 @@ extern "C" void app_main()
     ESP_ERROR_CHECK(claw_matter_bridge_lua_register_module());
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     ESP_ERROR_CHECK(mosaico_matter_camera_init(s_matter_dev_mngr));
-    /* Registers each mosaico_hotplug_bridge accessory's Lua module (today:
-     * require("mosaico_interact") for the bundled LED driver). Must happen
-     * before app_claw_start() brings up the Lua runtime. */
-    ESP_ERROR_CHECK(mosaico_hotplug_bridge_register_lua());
 #endif
     auto *config = static_cast<app_config_t *>(calloc(1, sizeof(app_config_t)));
     auto *claw = static_cast<app_claw_config_t *>(calloc(1, sizeof(app_claw_config_t)));
@@ -480,13 +482,10 @@ extern "C" void app_main()
     ESP_ERROR_CHECK(claw_matter_bridge_start(&bridge_config));
     bridge_memory_log("after Matter");
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
-    /* Hot-plug detection creates/removes devices through the same
-     * claw_matter_bridge device-management API as chat/skill commands, so it
-     * must start after claw_matter_bridge_start() brings the Matter server
-     * and Lua job supervisor up. */
-    ESP_ERROR_CHECK(mosaico_hotplug_bridge_start());
+    ESP_ERROR_CHECK(mosaico_hotplug_bridge_start(s_matter_dev_mngr));
     mosaic_settings_ops_t settings_ops{};
     settings_ops.get_snapshot = settings_get_snapshot;
+    settings_ops.get_battery = settings_get_battery;
     settings_ops.set_rotation = settings_set_rotation;
     settings_ops.set_brightness = settings_set_brightness;
     settings_ops.set_volume = settings_set_volume;
@@ -506,6 +505,8 @@ extern "C" void app_main()
     ESP_ERROR_CHECK(mosaic_system_configure(&system_ops));
     mosaic_matter_bridge_set_handles(s_matter_core, s_matter_dev_mngr);
     ESP_ERROR_CHECK(mosaico_ui_start());
+    esp_err_t battery_error = bridge_battery_start();
+    if (battery_error != ESP_OK) ESP_LOGW(TAG, "Battery sampler startup failed: %s", esp_err_to_name(battery_error));
 #endif
     ESP_ERROR_CHECK(http_server_start()); ESP_ERROR_CHECK(http_server_webim_bind_im());
     bridge_memory_log("ready");

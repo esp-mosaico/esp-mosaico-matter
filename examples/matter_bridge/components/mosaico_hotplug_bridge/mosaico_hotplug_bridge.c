@@ -5,6 +5,7 @@
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/queue.h"
@@ -57,12 +58,21 @@ static void bridge_task(void *arg)
     (void)arg;
     mosaico_hotplug_event_t event;
     while (true) {
-        if (xQueueReceive(s_events, &event, portMAX_DELAY) == pdTRUE) {
+        TickType_t timeout = portMAX_DELAY;
+        for (int slot = 0; slot < MOSAICO_MODULE_MGR_SLOT_COUNT; ++slot) {
+            if (s_slot_accessory[slot] && s_slot_accessory[slot]->poll) timeout = pdMS_TO_TICKS(100);
+        }
+        if (xQueueReceive(s_events, &event, timeout) == pdTRUE) {
             if (event.presence == MOSAICO_MODULE_PRESENCE_PRESENT) {
                 handle_present(&event);
             } else {
                 handle_absent(&event);
             }
+        }
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        for (int slot = 0; slot < MOSAICO_MODULE_MGR_SLOT_COUNT; ++slot) {
+            const mosaico_hotplug_accessory_t *accessory = s_slot_accessory[slot];
+            if (accessory && accessory->poll) accessory->poll((mosaico_module_mgr_slot_t)slot, now_ms);
         }
     }
 }
@@ -97,17 +107,20 @@ static void on_module_event(const mosaico_module_mgr_event_t *event, void *user_
     }
 }
 
-esp_err_t mosaico_hotplug_bridge_register_lua(void)
+static void attribute_changed(bridge_dev_mngr_handle_t dev_mngr,
+    const bridge_dev_mngr_attribute_change_t *change, void *ctx)
 {
+    (void)dev_mngr;
+    (void)ctx;
     for (size_t i = 0; i < sizeof(s_accessories) / sizeof(s_accessories[0]); i++) {
-        if (!s_accessories[i]->register_lua) continue;
-        ESP_RETURN_ON_ERROR(s_accessories[i]->register_lua(), TAG, "Failed to register accessory Lua");
+        if (s_accessories[i]->attribute_changed) s_accessories[i]->attribute_changed(change);
     }
-    return ESP_OK;
 }
 
-esp_err_t mosaico_hotplug_bridge_start(void)
+esp_err_t mosaico_hotplug_bridge_start(bridge_dev_mngr_handle_t dev_mngr)
 {
+    if (!dev_mngr || s_events) return ESP_ERR_INVALID_STATE;
+    mosaico_hotplug_devices_init(dev_mngr);
     s_events = xQueueCreate(8, sizeof(mosaico_hotplug_event_t));
     ESP_RETURN_ON_FALSE(s_events, ESP_ERR_NO_MEM, TAG, "Failed to create event queue");
 
@@ -116,6 +129,11 @@ esp_err_t mosaico_hotplug_bridge_start(void)
     mosaico_module_subscription_t subscription = {0};
     ESP_RETURN_ON_ERROR(mosaico_module_mgr_subscribe(on_module_event, NULL, &subscription), TAG,
         "Failed to subscribe to module manager");
+
+    const bridge_dev_mngr_listener_t listener = {.attribute_changed = attribute_changed};
+    bridge_dev_mngr_listener_id_t listener_id;
+    ESP_RETURN_ON_ERROR(bridge_dev_mngr_add_listener(dev_mngr, &listener, &listener_id), TAG,
+        "Failed to subscribe to native device writes");
 
     /* mosaico_module_mgr_subscribe() does not replay existing state. */
     for (int slot = MOSAICO_MODULE_MGR_SLOT_LEFT; slot < MOSAICO_MODULE_MGR_SLOT_COUNT; ++slot) {

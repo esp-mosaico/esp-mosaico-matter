@@ -15,6 +15,7 @@ are mutually exclusive lock-screen modes, not navigation pages.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -100,6 +101,7 @@ FONT = DEJAVU_SANS
 BOLD = DEJAVU_SANS_BOLD
 MOSAIC = FONT
 ASSETS = '../../common/assets'
+WITH_THREAD_BR = os.environ.get('MOSAIC_HUB_THREAD_BR', '1') == '1'
 
 # Figma 首页1-熄屏 (AOD only) — not the same as 时钟.
 AOD_DATE_SIZE = 26
@@ -135,7 +137,7 @@ HUB_IMAGES = [
       for level in range(0, 5)],
     (f'{ASSETS}/icons/camera.png', 118, 118),
     (f'{ASSETS}/icons/matter.png', 118, 118),
-    (f'{ASSETS}/icons/thread.png', 96, 96),
+    *([(f'{ASSETS}/icons/thread.png', 96, 96)] if WITH_THREAD_BR else []),
     (f'{ASSETS}/icons/claw.png', 118, 118),
     (f'{ASSETS}/icons/settings.png', 118, 118),
     (f'{ASSETS}/icons/skills.png', 118, 118),
@@ -289,14 +291,16 @@ def build_clock_face(objs, parent):
     orb_x, orb_y = card_x + 262, card_y + 20
     append_home_clock(objs, parent, orb_x, orb_y)  # demo 12:24
 
-    # Product H1 order: Matter / Thread / CLAW / Settings.
-    shortcuts = (
-        (ICON_COLS[0], 'matter', 'Matter', 'app_matter'),
-        (ICON_COLS[1], 'thread', 'Thread', 'app_thread_br'),
-        (ICON_COLS[2], 'claw', 'CLAW', 'app_ai_create'),
-        (ICON_COLS[3], 'settings', 'Settings', 'app_settings'),
-    )
-    for x, icon, text, cb in shortcuts:
+    # Only products that include Thread BR expose its launcher shortcut.
+    shortcuts = [('matter', 'Matter', 'app_matter')]
+    if WITH_THREAD_BR:
+        shortcuts.append(('thread', 'Thread', 'app_thread_br'))
+    shortcuts.extend((
+        ('claw', 'CLAW', 'app_ai_create'),
+        ('settings', 'Settings', 'app_settings'),
+    ))
+    for index, (icon, text, cb) in enumerate(shortcuts):
+        x = ICON_COLS[0] + index * (ICON_COLS[-1] - ICON_COLS[0]) // (len(shortcuts) - 1)
         objs.append(image(
             parent, f'{ASSETS}/icons/{icon}.png',
             x, ICON_ROW_BOT_Y, ICON_SIZE, ICON_SIZE,

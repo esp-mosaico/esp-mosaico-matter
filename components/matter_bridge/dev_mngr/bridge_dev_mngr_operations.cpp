@@ -455,6 +455,19 @@ esp_err_t execute_report(pending_request &request,
     return error;
 }
 
+esp_err_t execute_write(pending_request &request,
+                        bridge::device_record *&result_device)
+{
+    auto *device = bridge::find_device(request.dev_mngr, request.device_id);
+    result_device = device;
+    if (!device || device->persistent_state != bridge::catalog_state::registered) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (!device->active || !device->reachable) return ESP_ERR_INVALID_STATE;
+    // Unlike driver reports, controls must reach the native/Lua listeners.
+    return bridge::attribute_write(*device, request.path, request.value);
+}
+
 void execute(intptr_t context)
 {
     auto *request = reinterpret_cast<pending_request *>(context);
@@ -484,6 +497,10 @@ void execute(intptr_t context)
         break;
     case BRIDGE_DEV_MNGR_OPERATION_REPORT_ATTRIBUTE:
         result.error = execute_report(*request, device);
+        result.value = request->value;
+        break;
+    case BRIDGE_DEV_MNGR_OPERATION_WRITE_ATTRIBUTE:
+        result.error = execute_write(*request, device);
         result.value = request->value;
         break;
     default:
@@ -666,6 +683,27 @@ esp_err_t bridge_dev_mngr_report_attribute(
         return ESP_ERR_INVALID_ARG;
     }
     auto *request = make_request(dev_mngr, BRIDGE_DEV_MNGR_OPERATION_REPORT_ATTRIBUTE,
+                                 completion_cb, user_ctx);
+    if (!request) {
+        return dev_mngr && completion_cb ? ESP_ERR_NO_MEM : ESP_ERR_INVALID_ARG;
+    }
+    snprintf(request->device_id, sizeof(request->device_id), "%s", device_id);
+    request->path = *path;
+    request->value = *value;
+    return submit(request, out_request_id);
+}
+
+esp_err_t bridge_dev_mngr_write_attribute(
+    bridge_dev_mngr_handle_t dev_mngr, const char *device_id,
+    const bridge_dev_mngr_attribute_path_t *path, const bridge_dev_mngr_value_t *value,
+    bridge_dev_mngr_request_id_t *out_request_id,
+    bridge_dev_mngr_request_completion_cb_t completion_cb, void *user_ctx)
+{
+    if (!valid_text(device_id, BRIDGE_DEV_MNGR_DEVICE_ID_MAX) || !path || !value ||
+        value->type > BRIDGE_DEV_MNGR_VALUE_JSON || value->truncated) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    auto *request = make_request(dev_mngr, BRIDGE_DEV_MNGR_OPERATION_WRITE_ATTRIBUTE,
                                  completion_cb, user_ctx);
     if (!request) {
         return dev_mngr && completion_cb ? ESP_ERR_NO_MEM : ESP_ERR_INVALID_ARG;

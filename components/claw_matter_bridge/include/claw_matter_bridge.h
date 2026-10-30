@@ -47,9 +47,6 @@ esp_err_t claw_matter_bridge_get_info_json(bool open_commissioning_window,
 esp_err_t claw_matter_bridge_list_devices_json(char **out_json);
 esp_err_t claw_matter_bridge_add_device_json(const char *definition_json,
                                              char **out_json);
-esp_err_t
-claw_matter_bridge_add_virtual_device_json(const char *definition_json,
-                                           char **out_json);
 esp_err_t claw_matter_bridge_remove_device(const char *device_id);
 esp_err_t claw_matter_bridge_restart_device_json(const char *device_id,
                                                  char **out_json);

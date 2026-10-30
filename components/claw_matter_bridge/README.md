@@ -1,8 +1,8 @@
 # CLAW Matter bridge
 
-`claw_matter_bridge` is the CLAW-facing management layer for bridged devices
-owned by `matter_bridge`. The component is implemented in C++ and exposes
-a small C ABI from `include/claw_matter_bridge.h`.
+`claw_matter_bridge` manages GPIO-backed Matter devices created through CLAW.
+It uses `matter_bridge` for endpoint management and exposes a small C ABI from
+`include/claw_matter_bridge.h`.
 
 The source layout separates lifecycle/runtime work from its adapters:
 

@@ -16,6 +16,7 @@ constexpr uint32_t kDimmableLight = UINT32_C(0x0101);
 constexpr uint32_t kColorLight = UINT32_C(0x010d);
 constexpr uint32_t kContactSensor = UINT32_C(0x0015);
 constexpr uint32_t kOccupancySensor = UINT32_C(0x0107);
+constexpr uint32_t kIlluminanceSensor = UINT32_C(0x0106);
 constexpr uint32_t kColorControlCluster = UINT32_C(0x0300);
 
 } // namespace
@@ -42,6 +43,9 @@ uint32_t bridge::builtin_device_type(const char *profile_id)
     }
     if (!strcmp(profile_id, BRIDGE_DEV_MNGR_PROFILE_OCCUPANCY_SENSOR)) {
         return kOccupancySensor;
+    }
+    if (!strcmp(profile_id, BRIDGE_DEV_MNGR_PROFILE_ILLUMINANCE_SENSOR)) {
+        return kIlluminanceSensor;
     }
     return 0;
 }
@@ -117,6 +121,13 @@ esp_err_t bridge::build_profile(endpoint_t *endpoint, uint32_t device_type,
         config.occupancy_sensing.feature_flags =
             cluster::occupancy_sensing::feature::other::get_id();
         return endpoint::occupancy_sensor::add(endpoint, &config);
+    }
+    case kIlluminanceSensor: {
+        endpoint::light_sensor::config_t config;
+        config.illuminance_measurement.measured_value = nullptr;
+        config.illuminance_measurement.min_measured_value = 1;
+        config.illuminance_measurement.max_measured_value = 65534;
+        return endpoint::light_sensor::add(endpoint, &config);
     }
     default:
         return ESP_ERR_NOT_SUPPORTED;

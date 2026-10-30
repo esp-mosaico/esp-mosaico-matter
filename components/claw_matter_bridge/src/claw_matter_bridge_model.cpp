@@ -49,9 +49,6 @@ esp_err_t bridge_model_parse(const cJSON *json, uint64_t mask, bridge_model_t *o
     const cJSON *name = cJSON_GetObjectItemCaseSensitive(json, "name");
     const cJSON *type = cJSON_GetObjectItemCaseSensitive(json, "type");
     const cJSON *pins = cJSON_GetObjectItemCaseSensitive(json, "pins");
-    const cJSON *virt = cJSON_GetObjectItemCaseSensitive(json, "virtual");
-    if (virt && !cJSON_IsBool(virt)) return invalid(error, error_size, "virtual must be boolean");
-    out->virtual_device = cJSON_IsTrue(virt);
     if (!cJSON_IsString(name) || !name->valuestring[0] || strlen(name->valuestring) >= sizeof(out->device.name))
         return invalid(error, error_size, "name must contain 1..32 bytes");
     strcpy(out->device.name, name->valuestring);
@@ -80,10 +77,7 @@ esp_err_t bridge_model_parse(const cJSON *json, uint64_t mask, bridge_model_t *o
              profiles[out->type]);
     out->device.device_type = device_types[out->type];
     int count = cJSON_GetArraySize(pins);
-    if (out->virtual_device) {
-        if (!cJSON_IsArray(pins) || count != 0)
-            return invalid(error, error_size, "virtual devices require an empty pins array");
-    } else if (!cJSON_IsArray(pins) || count < 1 || count > BRIDGE_MAX_PINS) {
+    if (!cJSON_IsArray(pins) || count < 1 || count > BRIDGE_MAX_PINS) {
         return invalid(error, error_size, "pins must contain 1..8 declarations");
     }
     for (int i = 0; i < count; i++) {
@@ -125,17 +119,15 @@ esp_err_t bridge_model_parse(const cJSON *json, uint64_t mask, bridge_model_t *o
                 return invalid(error, error_size, "Duplicate GPIO or role");
         out->pin_count++;
     }
-    bool ok = out->virtual_device;
-    if (!ok) {
-        switch (out->type) {
-        case BRIDGE_DEVICE_LIGHT:
-        case BRIDGE_DEVICE_OUTLET: ok = role(out, "power", BRIDGE_OUTPUT) != NULL; break;
-        case BRIDGE_DEVICE_DIMMABLE_LIGHT: ok = role(out, "level", BRIDGE_PWM) != NULL; break;
-        case BRIDGE_DEVICE_COLOR_LIGHT:
-            ok = role(out, "color", BRIDGE_STRIP) || (role(out, "red", BRIDGE_PWM) &&
-                role(out, "green", BRIDGE_PWM) && role(out, "blue", BRIDGE_PWM)); break;
-        default: ok = role(out, "sensor", BRIDGE_INPUT) != NULL; break;
-        }
+    bool ok = false;
+    switch (out->type) {
+    case BRIDGE_DEVICE_LIGHT:
+    case BRIDGE_DEVICE_OUTLET: ok = role(out, "power", BRIDGE_OUTPUT) != NULL; break;
+    case BRIDGE_DEVICE_DIMMABLE_LIGHT: ok = role(out, "level", BRIDGE_PWM) != NULL; break;
+    case BRIDGE_DEVICE_COLOR_LIGHT:
+        ok = role(out, "color", BRIDGE_STRIP) || (role(out, "red", BRIDGE_PWM) &&
+            role(out, "green", BRIDGE_PWM) && role(out, "blue", BRIDGE_PWM)); break;
+    default: ok = role(out, "sensor", BRIDGE_INPUT) != NULL; break;
     }
     if (!ok) return invalid(error, error_size, "Required hardware roles missing for this Matter type");
     if (error && error_size) error[0] = 0;

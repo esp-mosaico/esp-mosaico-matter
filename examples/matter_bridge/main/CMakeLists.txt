@@ -1,4 +1,4 @@
-idf_component_register(SRCS "main.cpp" "router_config.c" "router_defaults.c" "bridge_memory.c" "llm_memory.c" INCLUDE_DIRS "."
+idf_component_register(SRCS "main.cpp" "bridge_battery.c" "router_config.c" "router_defaults.c" "bridge_memory.c" "llm_memory.c" INCLUDE_DIRS "."
     LDFRAGMENTS "linker.lf"
     PRIV_REQUIRES claw_matter_bridge app_claw app_config http_server
         gen_bmgr_codes esp_board_manager nvs_flash esp_wifi esp_netif

@@ -11,6 +11,7 @@ set(BRIDGE_DEV_MNGR_SRCS
     "dev_mngr/bridge_dev_mngr_store.cpp"
     "dev_mngr/clusters/bridged_device_basic_information/bridged_device_basic_information.cpp"
     "dev_mngr/clusters/occupancy_sensing/occupancy_sensing.cpp"
+    "dev_mngr/clusters/illuminance_measurement/illuminance_measurement.cpp"
 )
 
 idf_component_register(

@@ -14,7 +14,9 @@ set(MOSAIC_APP_SCENE_SOURCES
     scene/home_scene.py
     scene/commissioning_scene.py
     scene/detail_scene.py
-    scene/layout.py)
+    scene/layout.py
+    ../../common/device_home_scene.py
+    ../../common/device_detail_scene.py)
 set(MOSAIC_APP_GENERATED_HEADERS matter_templates.h)
 set(MOSAIC_APP_LOGIC NATIVE)
 set(MOSAIC_APP_TICK_MS 100)

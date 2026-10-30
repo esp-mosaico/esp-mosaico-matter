@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "claw_matter_bridge_private.h"
 #include "claw_matter_bridge.h"
-#include <math.h>
+#include <cmath>
 #include <stdio.h>
 #include <string.h>
 #include "driver/gpio.h"
@@ -97,11 +97,12 @@ static int ready(lua_State *L)
 static int report(lua_State *L)
 {
     luaL_checktype(L, 2, LUA_TBOOLEAN);
-    bool value = lua_toboolean(L, 2);
+    const bool value = lua_toboolean(L, 2);
     lua_device_t *ud;
     bridge_entry_t *e = locked_entry(L, &ud);
-    bool sensor = e->model.type >= BRIDGE_DEVICE_CONTACT_SENSOR;
-    bool changed = sensor ? e->desired.sensor != value : e->desired.on != value;
+    const bool sensor = e->model.type == BRIDGE_DEVICE_CONTACT_SENSOR ||
+                        e->model.type == BRIDGE_DEVICE_OCCUPANCY_SENSOR;
+    const bool changed = !e->report_initialized || (sensor ? e->desired.sensor != value : e->desired.on != value);
     bridge_dev_mngr_attribute_path_t path = {};
     path.cluster_id = static_cast<uint32_t>(sensor
         ? (e->model.type == BRIDGE_DEVICE_OCCUPANCY_SENSOR ? 0x0406 : 0x0045)
@@ -117,7 +118,9 @@ static int report(lua_State *L)
     esp_err_t err = bridge_dev_mngr_report(id, &path, &reported);
     if (err != ESP_OK) return luaL_error(L, "Matter report: %s", esp_err_to_name(err));
     e = locked_entry(L, &ud);
-    if (sensor) e->desired.sensor = value; else e->desired.on = value;
+    e->report_initialized = true;
+    if (sensor) e->desired.sensor = value;
+    else e->desired.on = value;
     e->version++;
     xSemaphoreGive(g_bridge->lock);
     return 0;
@@ -159,7 +162,7 @@ static int pwm(lua_State *L)
 {
     const char *role = luaL_checkstring(L, 2);
     lua_Number percent = luaL_checknumber(L, 3);
-    if (!isfinite(percent) || percent < 0 || percent > 100) return luaL_error(L, "PWM duty must be 0..100 percent");
+    if (!std::isfinite(percent) || percent < 0 || percent > 100) return luaL_error(L, "PWM duty must be 0..100 percent");
     lua_device_t *ud;
     bridge_entry_t *e = locked_entry(L, &ud);
     int index = pin_index(e, role, BRIDGE_PWM);

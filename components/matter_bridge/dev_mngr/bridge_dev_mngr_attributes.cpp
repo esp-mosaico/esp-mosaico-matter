@@ -1,6 +1,7 @@
 /* SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
  * SPDX-License-Identifier: Apache-2.0 */
 #include "bridge_dev_mngr_private.h"
+#include "bridge_control_validation.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,6 +11,7 @@
 
 #include "clusters/bridged_device_basic_information/bridged_device_basic_information.h"
 #include "clusters/occupancy_sensing/occupancy_sensing.h"
+#include "clusters/illuminance_measurement/illuminance_measurement.h"
 #include "esp_matter_data_model_provider.h"
 
 namespace {
@@ -320,6 +322,7 @@ const bridge::cluster_adapter *bridge::find_cluster_adapter(uint32_t cluster_id)
     static const cluster_adapter *const adapters[] = {
         &clusters::bridged_device_basic_information::adapter,
         &clusters::occupancy_sensing::adapter,
+        &clusters::illuminance_measurement::adapter,
     };
     for (const auto *adapter : adapters) {
         if (adapter->cluster_id == cluster_id) {
@@ -400,4 +403,40 @@ esp_err_t bridge::attribute_report(device_record &record,
     return adapter && adapter->report
                ? adapter->report(record.endpoint_id, path, value)
                : generic_attribute_report(record.endpoint_id, path, value);
+}
+
+esp_err_t bridge::attribute_write(device_record &record,
+                                 const bridge_dev_mngr_attribute_path_t &path,
+                                 const bridge_dev_mngr_value_t &value)
+{
+    esp_err_t error = validate_control(record.definition.profile_id, path, value);
+    if (error != ESP_OK) return error;
+    if (path.cluster_id == 0x0300 && path.attribute_id == 7) {
+        bridge_dev_mngr_value_t minimum{}, maximum{};
+        error = generic_attribute_read(record.endpoint_id, {0x0300, 0x400b}, minimum);
+        if (error != ESP_OK) return error;
+        error = generic_attribute_read(record.endpoint_id, {0x0300, 0x400c}, maximum);
+        if (error != ESP_OK) return error;
+        if (minimum.type != BRIDGE_DEV_MNGR_VALUE_UNSIGNED ||
+            maximum.type != BRIDGE_DEV_MNGR_VALUE_UNSIGNED ||
+            value.data.unsigned_value < minimum.data.unsigned_value ||
+            value.data.unsigned_value > maximum.data.unsigned_value) return ESP_ERR_INVALID_ARG;
+    }
+    auto *attribute = esp_matter::attribute::get(record.endpoint_id,
+                                                 path.cluster_id, path.attribute_id);
+    if (!attribute) return ESP_ERR_NOT_FOUND;
+    uint8_t octets[(BRIDGE_DEV_MNGR_VALUE_TEXT_MAX - 1) / 2]{};
+    esp_matter_attr_val_t encoded;
+    error = encode_for_attribute(attribute, value, encoded, octets, sizeof(octets));
+    if (error != ESP_OK) return error;
+    error = esp_matter::attribute::update(record.endpoint_id, path.cluster_id,
+                                         path.attribute_id, &encoded);
+    if (error != ESP_OK || path.cluster_id != 0x0300) return error;
+
+    // The same listener used by remote commands selects the physical driver's
+    // HS or temperature implementation from ColorMode.
+    auto mode = esp_matter_enum8(path.attribute_id == 7 ? 2 : 0);
+    error = esp_matter::attribute::update(record.endpoint_id, 0x0300, 8, &mode);
+    if (error != ESP_OK) return error;
+    return esp_matter::attribute::update(record.endpoint_id, 0x0300, 0x4001, &mode);
 }
