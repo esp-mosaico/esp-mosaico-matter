@@ -1,5 +1,5 @@
 export const en = {
-  docTitle: 'ESP-Claw Matter Hub',
+  docTitle: 'Mosaico Matter',
   pageTitle: 'Device Settings',
   pageSubtitle: 'View system operation basic information and status',
 
@@ -11,7 +11,6 @@ export const en = {
   toggleSidebar: 'Toggle sidebar',
   closeMenu: 'Close navigation menu',
   externalHome: 'Home',
-  externalDocs: 'Documentation',
   externalGithub: 'GitHub',
 
   navStatus: 'System Status',
@@ -26,7 +25,20 @@ export const en = {
   navLuaModules: 'Lua Modules',
   navFiles: 'Files',
   navWebIm: 'Web Chat',
-  navMatter: 'Matter Fabric',
+  navMatter: 'Matter',
+
+  bridgeTitle: 'Matter Bridge',
+  bridgeDescription: 'Bridge status, pairing and local devices.',
+  bridgeCommissioned: 'Paired with a Matter controller',
+  bridgeUncommissioned: 'Not paired',
+  bridgePairing: 'Pair this bridge',
+  bridgePairingHint: 'Open a 180-second window, then scan the QR code or enter the manual code in your Matter controller.',
+  bridgeOpenWindow: 'Open pairing window',
+  bridgeWindowOpened: 'Pairing window opened for 180 seconds.',
+  bridgeDevices: 'Bridged devices',
+  bridgeEmpty: 'No bridged devices.',
+  bridgeEndpoint: 'Endpoint',
+  bridgeInactive: 'Inactive',
 
   webimDesc: 'Interact with ESP-Claw in real time via WebSocket.',
   webimSend: 'Send',
@@ -231,6 +243,7 @@ export const en = {
   capabilityLlmDefaults: 'Restore LLM Defaults',
   capabilityLlmClear: 'Clear LLM',
   capabilityLoading: 'Loading capabilities…',
+  capabilityEmpty: 'No capability groups are available in this firmware.',
   capabilityLoadError: 'Failed to load capabilities',
   capabilityNameCol: 'Capability',
   capabilityEnabled: 'Enabled',
@@ -245,6 +258,8 @@ export const en = {
   luaModulesSelectAll: 'Select All',
   luaModulesClearAll: 'Clear All',
   luaModulesLoading: 'Loading Lua modules…',
+  luaModulesUnavailable: 'Lua support is not included in this firmware.',
+  luaModulesEmpty: 'No Lua modules are available in this firmware.',
   luaModulesLoadError: 'Failed to load Lua modules',
   luaModulesCapabilityRequired:
     'Enable the cap_lua capability group before Lua module selection takes effect.',

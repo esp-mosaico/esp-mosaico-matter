@@ -28,19 +28,31 @@ export async function reloadStatus() {
 
 const [capabilities, setCapabilities] = createSignal<CapabilityItem[]>([]);
 const [luaModules, setLuaModules] = createSignal<LuaModuleItem[]>([]);
+const [capabilitiesLoaded, setCapabilitiesLoaded] = createSignal(false);
+const [luaModulesLoaded, setLuaModulesLoaded] = createSignal(false);
+const [luaModulesError, setLuaModulesError] = createSignal<string | null>(null);
 export const appCapabilities = capabilities;
 export const appLuaModules = luaModules;
+export { capabilitiesLoaded, luaModulesLoaded, luaModulesError };
 
 export async function reloadCapabilities() {
   const items = await fetchCapabilities();
   setCapabilities(items);
+  setCapabilitiesLoaded(true);
   return items;
 }
 
 export async function reloadLuaModules() {
-  const items = await fetchLuaModules();
-  setLuaModules(items);
-  return items;
+  setLuaModulesError(null);
+  try {
+    const items = await fetchLuaModules();
+    setLuaModules(items);
+    setLuaModulesLoaded(true);
+    return items;
+  } catch (err) {
+    setLuaModulesError((err as Error).message);
+    throw err;
+  }
 }
 
 /* ── Partial configuration cache ────────────────────────────────────── */

@@ -21,6 +21,11 @@
 #include <app/server/Server.h>
 #include <platform/ESP32/NetworkCommissioningDriver.h>
 #include "http_server.h"
+#include "http_app_config.h"
+#include "http_server_matter_bridge.h"
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE
+#include "http_server_claw.h"
+#endif
 #include "bridge_core.h"
 #include "bridge_dev_mngr.h"
 #include "claw_matter_bridge.h"
@@ -178,7 +183,17 @@ static esp_err_t wifi_status(http_server_wifi_status_t *out)
     out->ap_active = false; out->wifi_mode = "station";
     return ESP_OK;
 }
-static esp_err_t restart_device(void) { esp_restart(); return ESP_OK; }
+static void restart_task(void *)
+{
+    vTaskDelay(pdMS_TO_TICKS(500));
+    esp_restart();
+}
+static esp_err_t restart_device(void)
+{
+    return xTaskCreate(restart_task, "http_restart", 2048, nullptr, 5, nullptr) == pdPASS ?
+        ESP_OK : ESP_ERR_NO_MEM;
+}
+
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
 /* Wired into the Mosaic Settings app's hold-to-reset control. */
 static esp_err_t settings_factory_reset(void *)
@@ -468,11 +483,22 @@ extern "C" void app_main()
     free(claw); free(config);
     bridge_memory_log("after CLAW");
     http_server_config_t http{};
+    const http_app_config_services_t config_services = {
+        .load = load_config, .save = save_config, .ap_config_supported = false,
+    };
+    http_app_config_init(&config_services);
     http.storage_base_path = claw_paths_get(CLAW_PATH_DATA);
-    http.services.load_config = load_config; http.services.save_config = save_config;
+    http.services.read_config = http_app_config_read;
+    http.services.patch_config = http_app_config_patch;
     http.services.get_wifi_status = wifi_status; http.services.restart_device = restart_device;
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE
+    http_server_claw_services_t http_claw_services = http_server_claw_wechat_services();
+    http.extension = http_server_claw_init(&http_claw_services);
+    http.claw_enabled = true;
+#endif
     ESP_ERROR_CHECK(http_server_init(&http));
     ESP_ERROR_CHECK(bridge_core_start(s_matter_core));
+    ESP_ERROR_CHECK(http_server_matter_set_bridge(s_matter_core, s_matter_dev_mngr));
     const claw_matter_bridge_config_t bridge_config = {
         .core = s_matter_core,
         .dev_mngr = s_matter_dev_mngr,
@@ -508,7 +534,10 @@ extern "C" void app_main()
     esp_err_t battery_error = bridge_battery_start();
     if (battery_error != ESP_OK) ESP_LOGW(TAG, "Battery sampler startup failed: %s", esp_err_to_name(battery_error));
 #endif
-    ESP_ERROR_CHECK(http_server_start()); ESP_ERROR_CHECK(http_server_webim_bind_im());
+    ESP_ERROR_CHECK(http_server_start());
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE && CONFIG_APP_CLAW_CAP_IM_LOCAL && CONFIG_HTTPD_WS_SUPPORT
+    ESP_ERROR_CHECK(http_server_webim_bind_im());
+#endif
     bridge_memory_log("ready");
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     ESP_LOGI(TAG, "Configure Wi-Fi in CLAW Settings, then open Matter Bridge for on-network pairing");

@@ -34,6 +34,14 @@ static esp_err_t status_handler(httpd_req_t *req)
     http_server_json_add_string(root, "ap_ip", status.ap_ip);
     http_server_json_add_string(root, "wifi_mode", status.wifi_mode);
     cJSON_AddBoolToObject(root, "matter_enabled", http_server_matter_enabled());
+    http_server_json_add_string(root, "matter_role", HTTP_SERVER_MATTER_ROLE);
+    cJSON_AddBoolToObject(root, "claw_enabled", ctx->claw_enabled);
+    cJSON_AddBoolToObject(root, "webim_supported", ctx->claw_enabled && ctx->extension.webim_supported);
+    cJSON_AddBoolToObject(root, "wechat_login_supported", ctx->claw_enabled && ctx->extension.wechat_login_supported);
+    cJSON_AddBoolToObject(root, "memory_supported", ctx->claw_enabled && ctx->extension.memory_supported);
+    cJSON_AddBoolToObject(root, "asr_supported", ctx->claw_enabled && ctx->asr_supported);
+    cJSON_AddBoolToObject(root, "restart_supported", ctx->services.restart_device != NULL);
+    cJSON_AddBoolToObject(root, "ap_config_supported", ctx->ap_config_supported);
 
     /* "*_free" are allocator-managed free bytes (RAM left after the static
      * image and, for PSRAM in this build, the XIP .text/.rodata + .ext_ram.bss
@@ -63,7 +71,11 @@ static esp_err_t status_handler(httpd_req_t *req)
 static esp_err_t restart_handler(httpd_req_t *req)
 {
     http_server_ctx_t *ctx = http_server_ctx();
-    esp_err_t err = ctx->services.restart_device ? ctx->services.restart_device() : ESP_ERR_NOT_SUPPORTED;
+    if (!ctx->services.restart_device) {
+        httpd_resp_set_status(req, "501 Not Implemented");
+        return httpd_resp_sendstr(req, "Device restart is unavailable");
+    }
+    esp_err_t err = ctx->services.restart_device();
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to restart device");
     }

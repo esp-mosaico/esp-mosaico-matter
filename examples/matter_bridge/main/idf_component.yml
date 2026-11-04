@@ -6,7 +6,7 @@ dependencies:
   app_config:
     path: ../../../third_party/esp-mosaico-claw/components/app_config
   http_server:
-    path: ../../../third_party/esp-mosaico-claw/components/http_server
+    path: ../../../components/http_server
   claw_matter_bridge:
     path: ../../../components/claw_matter_bridge
   http_reuse:

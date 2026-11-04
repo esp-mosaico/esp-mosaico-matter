@@ -1,4 +1,4 @@
-import { Book, House, Languages } from 'lucide-solid';
+import { House, Languages } from 'lucide-solid';
 import { createEffect, createSignal, For, onCleanup } from 'solid-js';
 import { currentLocale, LOCALES, setLocale, t } from '../../i18n';
 
@@ -42,7 +42,6 @@ export function LanguageSwitcher() {
   onCleanup(() => document.removeEventListener('click', handleDocClick));
 
   const currentLabel = () => LOCALES.find((loc) => loc.id === currentLocale())?.label ?? 'English';
-  const localePath = () => currentLocale();
 
   return (
     <div class="flex items-center gap-2">
@@ -57,17 +56,7 @@ export function LanguageSwitcher() {
         <House class="w-4 h-4" />
       </a>
       <a
-        href={`https://esp-claw.com/${localePath()}/tutorial`}
-        target="_blank"
-        rel="noreferrer"
-        class={iconButtonClass}
-        title={t('externalDocs') as string}
-        aria-label={t('externalDocs') as string}
-      >
-        <Book class="w-4 h-4" />
-      </a>
-      <a
-        href="https://github.com/espressif/esp-claw"
+        href="https://github.com/esp-mosaico/esp-mosaico-matter"
         target="_blank"
         rel="noreferrer"
         class={iconButtonClass}

@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show, type Component } from 'solid-js';
 import { t, tf } from '../i18n';
 import type { AppConfig, CapabilityItem } from '../api/client';
-import { appCapabilities } from '../state/config';
+import { appCapabilities, capabilitiesLoaded } from '../state/config';
 import { createConfigTab } from '../state/configTab';
 import { TabShell } from '../components/layout/TabShell';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -231,8 +231,11 @@ export const CapabilitiesPage: Component<{ onRestartRequest: () => void }> = (pr
       </div>
 
       <div class="p-5">
-        <Show when={appCapabilities().length === 0}>
+        <Show when={!capabilitiesLoaded()}>
           <Banner kind="info" message={t('capabilityLoading') as string} />
+        </Show>
+        <Show when={capabilitiesLoaded() && appCapabilities().length === 0}>
+          <Banner kind="info" message={t('capabilityEmpty') as string} />
         </Show>
         <Show when={appCapabilities().length > 0 && filtered().length === 0}>
           <Banner kind="info" message={t('capabilityNoResult') as string} />

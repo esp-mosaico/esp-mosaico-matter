@@ -41,6 +41,10 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "http_server.h"
+#include "http_app_config.h"
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE
+#include "http_server_claw.h"
+#endif
 #include "http_server_matter.h"
 #if CONFIG_ESP_BOARD_ESP_MOSAICO
 #include "mosaico_camera_service.h"
@@ -563,6 +567,7 @@ static esp_err_t main_wechat_binding_persist(
     return err;
 }
 
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE
 static esp_err_t main_wechat_login_start(
     const char *account_id, bool force)
 {
@@ -623,7 +628,9 @@ static esp_err_t main_wechat_login_cancel(void)
                         "WeChat binding service is not ready");
     return wechat_binding_service_cancel(s_wechat_binding);
 }
+#endif
 #else
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE
 static esp_err_t main_wechat_login_start(const char *account_id, bool force)
 {
     return cap_im_wechat_qr_login_start(account_id, force);
@@ -670,6 +677,7 @@ static esp_err_t main_wechat_login_mark_persisted(void)
 {
     return cap_im_wechat_qr_login_mark_persisted();
 }
+#endif
 #endif
 #endif
 
@@ -1015,13 +1023,17 @@ void app_main(void)
         return;
     }
 
-    ESP_ERROR_CHECK(http_server_init(&(http_server_config_t) {
-        .storage_base_path = app_fs_storage_base_path(),
-        .services = {
-            .load_config = main_load_config,
-            .save_config = main_save_config,
-            .get_wifi_status = main_get_wifi_status,
-            .restart_device = main_restart_device,
+    http_app_config_init(&(http_app_config_services_t) {
+        .load = main_load_config,
+        .save = main_save_config,
+        .ap_config_supported = true,
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+        .asr_supported = true,
+#endif
+    });
+    http_server_extension_t http_extension = {0};
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE
+    http_extension = http_server_claw_init(&(http_server_claw_services_t) {
 #if CONFIG_APP_CLAW_CAP_IM_WECHAT
             .wechat_login_start = main_wechat_login_start,
             .wechat_login_get_status = main_wechat_login_get_status,
@@ -1030,7 +1042,24 @@ void app_main(void)
             .wechat_login_mark_persisted = main_wechat_login_mark_persisted,
 #endif
 #endif
+    });
+#endif
+    ESP_ERROR_CHECK(http_server_init(&(http_server_config_t) {
+        .storage_base_path = app_fs_storage_base_path(),
+        .services = {
+            .read_config = http_app_config_read,
+            .patch_config = http_app_config_patch,
+            .get_wifi_status = main_get_wifi_status,
+            .restart_device = main_restart_device,
         },
+        .extension = http_extension,
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE
+        .claw_enabled = true,
+#endif
+        .ap_config_supported = true,
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+        .asr_supported = true,
+#endif
     }));
 #if !CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     ESP_ERROR_CHECK(wifi_manager_register_state_callback(on_wifi_state_changed, NULL));
@@ -1171,7 +1200,7 @@ void app_main(void)
         ESP_ERROR_CHECK(http_server_start());
     }
 #endif
-#if CONFIG_APP_CLAW_CAP_IM_LOCAL
+#if CONFIG_HTTP_SERVER_CLAW_ENABLE && CONFIG_APP_CLAW_CAP_IM_LOCAL && CONFIG_HTTPD_WS_SUPPORT
     ESP_ERROR_CHECK(http_server_webim_bind_im());
 #endif
 

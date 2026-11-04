@@ -2,6 +2,8 @@ import { createSignal, Show, type Component } from 'solid-js';
 import { t } from '../i18n';
 import type { AppConfig } from '../api/client';
 import { createConfigTab } from '../state/configTab';
+import { appCapabilities } from '../state/config';
+import { capabilitySupported, filterCapabilityConfig } from '../state/features';
 import { TabShell } from '../components/layout/TabShell';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StaticConfigBlock } from '../components/ui/ConfigBlocks';
@@ -27,11 +29,15 @@ export const WebReqPage: Component<{ onRestartRequest: () => void }> = (props) =
       search_tavily_key: config.search_tavily_key ?? '',
       search_http_allowlist: config.search_http_allowlist ?? '',
     }),
-    fromForm: (form) => ({
-      search_brave_key: form.search_brave_key.trim(),
-      search_tavily_key: form.search_tavily_key.trim(),
-      search_http_allowlist: form.search_http_allowlist.trim(),
-    }),
+    fromForm: (form) =>
+      filterCapabilityConfig(
+        {
+          search_brave_key: form.search_brave_key.trim(),
+          search_tavily_key: form.search_tavily_key.trim(),
+          search_http_allowlist: form.search_http_allowlist.trim(),
+        },
+        appCapabilities(),
+      ),
   });
   const [confirmOpen, setConfirmOpen] = createSignal(false);
 
@@ -49,53 +55,57 @@ export const WebReqPage: Component<{ onRestartRequest: () => void }> = (props) =
         </div>
       </Show>
       <div class="divide-y divide-[var(--color-border-subtle)] mt-2">
-        <StaticConfigBlock title={t('sectionWebReqSearch') as string}>
-          <div class="grid gap-3 sm:grid-cols-2 pt-2">
-            <TextInput
-              type="password"
-              label={
-                <>
-                  {t('webreqBraveKey')}
-                  <LabelLink href={BRAVE_API_KEY_URL}>
-                    {t('llmProviderConsole') as string} ↗
-                  </LabelLink>
-                </>
-              }
-              value={tab.form.search_brave_key}
-              onInput={(event) => tab.setForm('search_brave_key', event.currentTarget.value)}
-            />
-            <TextInput
-              type="password"
-              label={
-                <>
-                  {t('webreqTavilyKey')}
-                  <LabelLink href={TAVILY_API_KEY_URL}>
-                    {t('llmProviderConsole') as string} ↗
-                  </LabelLink>
-                </>
-              }
-              value={tab.form.search_tavily_key}
-              onInput={(event) => tab.setForm('search_tavily_key', event.currentTarget.value)}
-            />
-          </div>
-          <p class="text-[0.78rem] text-[var(--color-text-muted)] m-0 pt-3">
-            {t('webreqSearchNote')}
-          </p>
-        </StaticConfigBlock>
-        <StaticConfigBlock title={t('sectionWebReqNetwork') as string}>
-          <div class="pt-2">
-            <TextInput
-              full
-              label={t('webreqHttpAllowlist')}
-              placeholder={t('webreqHttpAllowlistPlaceholder') as string}
-              value={tab.form.search_http_allowlist}
-              onInput={(event) => tab.setForm('search_http_allowlist', event.currentTarget.value)}
-            />
-          </div>
-          <p class="text-[0.78rem] text-[var(--color-text-muted)] m-0 pt-3">
-            {t('webreqHttpAllowlistNote')}
-          </p>
-        </StaticConfigBlock>
+        <Show when={capabilitySupported(appCapabilities(), 'cap_web_search')}>
+          <StaticConfigBlock title={t('sectionWebReqSearch') as string}>
+            <div class="grid gap-3 sm:grid-cols-2 pt-2">
+              <TextInput
+                type="password"
+                label={
+                  <>
+                    {t('webreqBraveKey')}
+                    <LabelLink href={BRAVE_API_KEY_URL}>
+                      {t('llmProviderConsole') as string} ↗
+                    </LabelLink>
+                  </>
+                }
+                value={tab.form.search_brave_key}
+                onInput={(event) => tab.setForm('search_brave_key', event.currentTarget.value)}
+              />
+              <TextInput
+                type="password"
+                label={
+                  <>
+                    {t('webreqTavilyKey')}
+                    <LabelLink href={TAVILY_API_KEY_URL}>
+                      {t('llmProviderConsole') as string} ↗
+                    </LabelLink>
+                  </>
+                }
+                value={tab.form.search_tavily_key}
+                onInput={(event) => tab.setForm('search_tavily_key', event.currentTarget.value)}
+              />
+            </div>
+            <p class="text-[0.78rem] text-[var(--color-text-muted)] m-0 pt-3">
+              {t('webreqSearchNote')}
+            </p>
+          </StaticConfigBlock>
+        </Show>
+        <Show when={capabilitySupported(appCapabilities(), 'cap_http_request')}>
+          <StaticConfigBlock title={t('sectionWebReqNetwork') as string}>
+            <div class="pt-2">
+              <TextInput
+                full
+                label={t('webreqHttpAllowlist')}
+                placeholder={t('webreqHttpAllowlistPlaceholder') as string}
+                value={tab.form.search_http_allowlist}
+                onInput={(event) => tab.setForm('search_http_allowlist', event.currentTarget.value)}
+              />
+            </div>
+            <p class="text-[0.78rem] text-[var(--color-text-muted)] m-0 pt-3">
+              {t('webreqHttpAllowlistNote')}
+            </p>
+          </StaticConfigBlock>
+        </Show>
       </div>
       <SavePanel
         dirty={tab.dirty()}

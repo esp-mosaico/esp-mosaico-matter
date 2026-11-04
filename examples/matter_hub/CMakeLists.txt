@@ -24,6 +24,7 @@ list(APPEND EXCLUDE_COMPONENTS matter_bridge claw_matter_bridge mosaic_ui)
 # ESP-IDF component-registration scope that does not see a plain set() here.
 set(MOSAICO_UI_WITH_MATTER_CONTROLLER ON CACHE BOOL "" FORCE)
 set(MOSAICO_UI_WITH_THREAD_BR ON CACHE BOOL "" FORCE)
+set(HTTP_SERVER_MATTER_BACKEND controller CACHE STRING "HTTP Matter backend" FORCE)
 
 include("${ESP_MOSAICO_UPSTREAM}/tools/cmake/esp_idf_patch.cmake")
 include("${ESP_MOSAICO_UPSTREAM}/tools/cmake/flash_partition_defaults.cmake")

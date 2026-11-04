@@ -31,7 +31,21 @@ import {
   TAVILY_API_KEY_URL,
 } from '../constants/externalLinks';
 import { t } from '../i18n';
-import { appConfig, ensureConfigGroups, patchConfigLocal } from '../state/config';
+import {
+  appCapabilities,
+  appConfig,
+  appStatus,
+  ensureConfigGroups,
+  patchConfigLocal,
+} from '../state/config';
+import {
+  capabilitySupported,
+  filterCapabilityConfig,
+  imPlatformAvailable,
+  restartAvailable,
+  routeAvailable,
+  wechatLoginAvailable,
+} from '../state/features';
 import { pushToast } from '../state/toast';
 
 type TabId =
@@ -579,6 +593,13 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
   const [provider, setProvider] = createSignal<ProviderKey>('openai');
   const [selectedPlatforms, setSelectedPlatforms] = createSignal<PlatformId[]>([]);
   const [wechatAdvancedOpen, setWechatAdvancedOpen] = createSignal(false);
+  const supportsWechatLogin = () => wechatLoginAvailable(appStatus());
+  const availablePlatforms = createMemo(() =>
+    PLATFORM_ORDER.filter((id) => imPlatformAvailable(id, appCapabilities())),
+  );
+  const selectedSupportedPlatforms = createMemo(() =>
+    selectedPlatforms().filter((id) => availablePlatforms().includes(id)),
+  );
   const isWechatConfigured = createMemo(() => isWechatConfiguredLikeIm(imForm));
   let llmBaseline: Partial<AppConfig> = {};
   let imBaseline: Partial<AppConfig> = {};
@@ -635,15 +656,38 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
     }
   });
 
-  const steps = createMemo(() => [
-    { title: t('setupStepLlm') as string, description: t('setupStepLlmDesc') as string },
-    { title: t('setupStepIm') as string, description: t('setupStepImDesc') as string },
-    { title: t('setupStepSearch') as string, description: t('setupStepSearchDesc') as string },
-    { title: t('setupStepDone') as string, description: t('setupStepDoneDesc') as string },
-  ]);
+  const steps = createMemo(() =>
+    [
+      {
+        id: 'llm',
+        title: t('setupStepLlm') as string,
+        description: t('setupStepLlmDesc') as string,
+        available: true,
+      },
+      {
+        id: 'im',
+        title: t('setupStepIm') as string,
+        description: t('setupStepImDesc') as string,
+        available: availablePlatforms().length > 0,
+      },
+      {
+        id: 'search',
+        title: t('setupStepSearch') as string,
+        description: t('setupStepSearchDesc') as string,
+        available: routeAvailable('webreq', appStatus(), appCapabilities()),
+      },
+      {
+        id: 'done',
+        title: t('setupStepDone') as string,
+        description: t('setupStepDoneDesc') as string,
+        available: true,
+      },
+    ].filter((item) => item.available),
+  );
+  const currentStep = () => steps()[step()]?.id;
 
   const remainingPlatforms = createMemo(() =>
-    PLATFORM_ORDER.filter((id) => !selectedPlatforms().includes(id)),
+    availablePlatforms().filter((id) => !selectedPlatforms().includes(id)),
   );
   const providerLinks = createMemo(() => getProviderLinks(provider()));
 
@@ -673,7 +717,10 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
     baseline: Partial<AppConfig>,
     onSaved: () => void,
   ) => {
-    const patch = diffConfigPatch(full, baseline);
+    const patch = diffConfigPatch(
+      filterCapabilityConfig(full, appCapabilities()),
+      filterCapabilityConfig(baseline, appCapabilities()),
+    );
     if (Object.keys(patch).length === 0) {
       onSaved();
       next();
@@ -739,7 +786,7 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
   };
 
   const saveIm = async () => {
-    const selected = new Set(selectedPlatforms());
+    const selected = new Set(selectedSupportedPlatforms());
     const message =
       (selected.has('wechat')
         ? (() => {
@@ -884,35 +931,39 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
       {/* Card body */}
       <div class="p-5">
         <Show when={id === 'wechat'}>
-          <Banner kind="info" message={t('wechatLoginNote') as string} />
-          <WechatWizardPanel
-            configured={isWechatConfigured()}
-            accountId={imForm.wechat_account_id.trim()}
-            onConfigured={onWechatLoginComplete}
-          />
+          <Show when={supportsWechatLogin()}>
+            <Banner kind="info" message={t('wechatLoginNote') as string} />
+            <WechatWizardPanel
+              configured={isWechatConfigured()}
+              accountId={imForm.wechat_account_id.trim()}
+              onConfigured={onWechatLoginComplete}
+            />
+          </Show>
           {/* Collapsible advanced credentials */}
           <div class="mt-4 rounded-[var(--radius-sm)] border border-[var(--color-border-subtle)] overflow-hidden">
-            <button
-              type="button"
-              class="w-full flex items-center justify-between px-4 py-2.5 text-[0.8rem] font-medium text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition text-left"
-              onClick={() => setWechatAdvancedOpen((v) => !v)}
-            >
-              <span>{t('imAdvancedSettings')}</span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class={`h-3.5 w-3.5 text-[var(--color-text-muted)] transition-transform duration-150 ${wechatAdvancedOpen() ? 'rotate-180' : ''}`}
-                aria-hidden="true"
+            <Show when={supportsWechatLogin()}>
+              <button
+                type="button"
+                class="w-full flex items-center justify-between px-4 py-2.5 text-[0.8rem] font-medium text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition text-left"
+                onClick={() => setWechatAdvancedOpen((v) => !v)}
               >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-            <Show when={wechatAdvancedOpen()}>
+                <span>{t('imAdvancedSettings')}</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class={`h-3.5 w-3.5 text-[var(--color-text-muted)] transition-transform duration-150 ${wechatAdvancedOpen() ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+            </Show>
+            <Show when={!supportsWechatLogin() || wechatAdvancedOpen()}>
               <div class="border-t border-[var(--color-border-subtle)] px-4 pt-4 pb-5 grid gap-4 sm:grid-cols-2">
                 <TextInput
                   type="password"
@@ -1033,7 +1084,7 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
                 <LanguageSwitcher />
               </div>
             </div>
-            <div class="grid gap-2 sm:grid-cols-4 mt-5">
+            <div class="grid gap-2 sm:grid-flow-col sm:auto-cols-fr mt-5">
               <For each={steps()}>
                 {(item, index) => (
                   <div
@@ -1078,7 +1129,7 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
               </div>
 
               <Switch>
-                <Match when={step() === 0}>
+                <Match when={currentStep() === 'llm'}>
                   <div class="grid gap-4 sm:grid-cols-2">
                     <div class="sm:col-span-2 flex flex-col gap-2">
                       <div class="text-[0.8rem] text-[var(--color-text-secondary)] font-medium">
@@ -1174,7 +1225,7 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
                   </div>
                 </Match>
 
-                <Match when={step() === 1}>
+                <Match when={currentStep() === 'im'}>
                   <div class="flex flex-col gap-5">
                     {/* Platform picker — always visible */}
                     <div class="rounded-[var(--radius-md)] border border-[var(--color-border-subtle)] bg-white/[0.02] px-4 py-3">
@@ -1208,7 +1259,7 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
                     </div>
 
                     {/* Empty state */}
-                    <Show when={selectedPlatforms().length === 0}>
+                    <Show when={selectedSupportedPlatforms().length === 0}>
                       <div class="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border-subtle)] bg-white/[0.02] px-6 py-10 flex flex-col items-center justify-center text-center">
                         <p class="m-0 text-[var(--color-text-primary)] font-medium">
                           {t('setupImEmpty')}
@@ -1220,39 +1271,43 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
                     </Show>
 
                     {/* Platform cards */}
-                    <For each={selectedPlatforms()}>{(id) => renderPlatformCard(id)}</For>
+                    <For each={selectedSupportedPlatforms()}>{(id) => renderPlatformCard(id)}</For>
                   </div>
                 </Match>
 
-                <Match when={step() === 2}>
+                <Match when={currentStep() === 'search'}>
                   <div class="grid gap-4 sm:grid-cols-2">
-                    <TextInput
-                      type="password"
-                      label={
-                        <>
-                          {t('webreqTavilyKey')}
-                          <LabelLink href={TAVILY_API_KEY_URL}>
-                            {t('llmProviderConsole') as string} ↗
-                          </LabelLink>
-                        </>
-                      }
-                      value={searchForm.search_tavily_key}
-                      onInput={(event) =>
-                        setSearchForm('search_tavily_key', event.currentTarget.value)
-                      }
-                    />
-                    <TextInput
-                      label={t('webreqHttpAllowlist')}
-                      placeholder={t('webreqHttpAllowlistPlaceholder') as string}
-                      value={searchForm.search_http_allowlist}
-                      onInput={(event) =>
-                        setSearchForm('search_http_allowlist', event.currentTarget.value)
-                      }
-                    />
+                    <Show when={capabilitySupported(appCapabilities(), 'cap_web_search')}>
+                      <TextInput
+                        type="password"
+                        label={
+                          <>
+                            {t('webreqTavilyKey')}
+                            <LabelLink href={TAVILY_API_KEY_URL}>
+                              {t('llmProviderConsole') as string} ↗
+                            </LabelLink>
+                          </>
+                        }
+                        value={searchForm.search_tavily_key}
+                        onInput={(event) =>
+                          setSearchForm('search_tavily_key', event.currentTarget.value)
+                        }
+                      />
+                    </Show>
+                    <Show when={capabilitySupported(appCapabilities(), 'cap_http_request')}>
+                      <TextInput
+                        label={t('webreqHttpAllowlist')}
+                        placeholder={t('webreqHttpAllowlistPlaceholder') as string}
+                        value={searchForm.search_http_allowlist}
+                        onInput={(event) =>
+                          setSearchForm('search_http_allowlist', event.currentTarget.value)
+                        }
+                      />
+                    </Show>
                   </div>
                 </Match>
 
-                <Match when={step() === 3}>
+                <Match when={currentStep() === 'done'}>
                   <div class="space-y-4">
                     <Banner kind="success" message={t('setupRestartBanner') as string} />
                   </div>
@@ -1263,41 +1318,58 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
 
           <div class="px-6 py-5 border-t border-[var(--color-border-subtle)] flex flex-wrap items-center justify-between gap-3">
             <div>
-              <Show when={step() > 0 && step() < 3}>
+              <Show when={step() > 0 && currentStep() !== 'done'}>
                 <Button variant="ghost" onClick={prev} disabled={saving()}>
                   {t('setupBack')}
                 </Button>
               </Show>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2">
-              <Show when={step() < 3}>
+              <Show when={currentStep() !== 'done'}>
                 <span class="text-[0.82rem] text-[var(--color-text-muted)]">
                   {t('setupSkipHint')}
                 </span>
               </Show>
-              <Show when={step() < 3}>
+              <Show when={currentStep() !== 'done'}>
                 <Button variant="secondary" onClick={next} disabled={saving()}>
                   {t('setupSkip')}
                 </Button>
               </Show>
-              <Show when={step() === 0}>
+              <Show when={currentStep() === 'llm'}>
                 <Button variant="primary" onClick={() => void saveLlm()} disabled={saving()}>
                   {t('setupSaveAndNext')}
                 </Button>
               </Show>
-              <Show when={step() === 1}>
+              <Show when={currentStep() === 'im'}>
                 <Button variant="primary" onClick={() => void saveIm()} disabled={saving()}>
                   {t('setupSaveAndNext')}
                 </Button>
               </Show>
-              <Show when={step() === 2}>
+              <Show when={currentStep() === 'search'}>
                 <Button variant="primary" onClick={() => void saveSearch()} disabled={saving()}>
                   {t('setupFinish')}
                 </Button>
               </Show>
-              <Show when={step() === 3}>
-                <Button variant="primary" onClick={() => props.onRestartRequest('webim')}>
+              <Show when={currentStep() === 'done' && restartAvailable(appStatus())}>
+                <Button
+                  variant="primary"
+                  onClick={() =>
+                    props.onRestartRequest(
+                      routeAvailable('webim', appStatus()) ? 'webim' : 'status',
+                    )
+                  }
+                >
                   {t('setupRestartNow')}
+                </Button>
+              </Show>
+              <Show when={currentStep() === 'done' && !restartAvailable(appStatus())}>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    window.location.hash = '#status';
+                  }}
+                >
+                  {t('navStatus')}
                 </Button>
               </Show>
             </div>

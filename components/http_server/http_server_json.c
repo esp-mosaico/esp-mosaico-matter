@@ -13,10 +13,8 @@ esp_err_t http_server_send_embedded_file(httpd_req_t *req,
                                          const uint8_t *end,
                                          const char *content_type)
 {
-    size_t content_len = (size_t)(end - start);
-    if (content_len > 0 && start[content_len - 1] == '\0') {
-        content_len--;
-    }
+    /* EMBED_FILES is binary; a trailing zero is part of the payload. */
+    const size_t content_len = (size_t)(end - start);
     httpd_resp_set_type(req, content_type);
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, max-age=0");
     httpd_resp_set_hdr(req, "Pragma", "no-cache");
