@@ -450,18 +450,25 @@ esp_err_t apply_change_report(fabric_manager_handle_t manager,
 
 } // namespace
 
+void data_model::free_report(report *transaction)
+{
+    transaction->~report();
+    free(transaction);
+}
+
 void data_model::report_begin(fabric_core_handle_t, uint64_t node_id, void *user_ctx)
 {
     auto manager = static_cast<fabric_manager_handle_t>(user_ctx);
     if (!manager || find_report(manager, node_id))
         return;
-    auto *transaction = static_cast<data_model::report *>(heap_caps_calloc(
-        1, sizeof(data_model::report), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    auto *transaction = static_cast<data_model::report *>(heap_caps_malloc(
+        sizeof(data_model::report), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!transaction) {
         transaction =
-            static_cast<data_model::report *>(calloc(1, sizeof(*transaction)));
+            static_cast<data_model::report *>(malloc(sizeof(*transaction)));
     }
     if (transaction) {
+        new (transaction) data_model::report{};
         transaction->node_id = node_id;
         transaction->next = manager->reports;
         manager->reports = transaction;
@@ -520,7 +527,7 @@ void data_model::report_end(fabric_core_handle_t, uint64_t node_id, esp_err_t er
         transaction->descriptor_invalid) {
         ESP_LOGW(kTag, "discard report for node 0x%016" PRIx64,
                  transaction->node_id);
-        free(transaction);
+        free_report(transaction);
         return;
     }
 
@@ -531,5 +538,5 @@ void data_model::report_end(fabric_core_handle_t, uint64_t node_id, esp_err_t er
                  snapshot_complete ? "commit snapshot" : "apply report",
                  esp_err_to_name(error));
     }
-    free(transaction);
+    free_report(transaction);
 }

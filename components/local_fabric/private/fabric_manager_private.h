@@ -7,6 +7,7 @@
 
 /** @file @brief Private endpoint/cluster device-manager model. */
 
+#include "data_model_shared_json.h"
 #include "fabric_core_private.h"
 #include "fabric_manager.h"
 
@@ -50,10 +51,11 @@ class lock_guard final
     SemaphoreHandle_t mutex_;
 };
 
-/** Fixed, trivially-copyable storage privately interpreted by one adapter. */
+/** Adapter scalars plus immutable, shared variable-length metadata. */
 struct cluster_state
 {
     alignas(max_align_t) uint8_t bytes[FABRIC_MANAGER_CLUSTER_STATE_MAX];
+    shared_json metadata;
 };
 
 using decode_attribute_fn = CHIP_ERROR (*)(uint32_t attribute_id,
@@ -245,6 +247,7 @@ bool number(const cJSON *value, double minimum, double maximum,
             double *out_value);
 } // namespace json
 
+void free_report(report *transaction);
 void report_begin(fabric_core_handle_t core, uint64_t node_id, void *user_ctx);
 void attribute_reported(fabric_core_handle_t core,
                         const fabric_core_private_attribute_report *value,

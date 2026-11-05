@@ -231,7 +231,7 @@ static matter_vm_argument_kind_t parse_argument_kind(const char *type)
     return MATTER_VM_ARGUMENT_NUMBER;
 }
 
-static void parse_argument(const cJSON *input, matter_vm_argument_t *argument)
+static esp_err_t parse_argument(const cJSON *input, matter_vm_argument_t *argument)
 {
     copy_text(argument->key, sizeof(argument->key), input->string);
     argument->kind = parse_argument_kind(json_string(input, "type", "number"));
@@ -243,25 +243,37 @@ static void parse_argument(const cJSON *input, matter_vm_argument_t *argument)
     argument->max = argument->has_max ? maximum->valuedouble : 0;
 
     const cJSON *values = cJSON_GetObjectItemCaseSensitive(input, "enum");
+    if (!values) return ESP_OK;
+    if (!cJSON_IsArray(values)) return ESP_ERR_INVALID_RESPONSE;
+    size_t count = cJSON_GetArraySize(values);
+    if (!count) return ESP_OK;
+    argument->enum_values = calloc(count, sizeof(*argument->enum_values));
+    argument->enum_ids = calloc(count, sizeof(*argument->enum_ids));
+    if (!argument->enum_values || !argument->enum_ids) return ESP_ERR_NO_MEM;
     const cJSON *value = NULL;
     cJSON_ArrayForEach(value, values) {
-        if (argument->enum_count >= MATTER_VM_ENUM_MAX) break;
+        const char *label = NULL;
+        int32_t mode_id = 0;
         if (cJSON_IsString(value)) {
-            copy_text(argument->enum_values[argument->enum_count++],
-                      MATTER_VM_TEXT_MAX, value->valuestring);
-            continue;
+            label = value->valuestring;
+        } else {
+            const cJSON *id = cJSON_GetObjectItemCaseSensitive(value, "value");
+            const cJSON *name = cJSON_GetObjectItemCaseSensitive(value, "label");
+            if (!cJSON_IsNumber(id) || !cJSON_IsString(name) ||
+                id->valuedouble < 0 || id->valuedouble > 255 ||
+                id->valuedouble != floor(id->valuedouble)) {
+                return ESP_ERR_INVALID_RESPONSE;
+            }
+            mode_id = id->valueint;
+            label = name->valuestring;
         }
-        const cJSON *id = cJSON_GetObjectItemCaseSensitive(value, "value");
-        const cJSON *label = cJSON_GetObjectItemCaseSensitive(value, "label");
-        if (cJSON_IsNumber(id) && cJSON_IsString(label) &&
-            id->valuedouble >= 0 && id->valuedouble <= 255 &&
-            id->valuedouble == floor(id->valuedouble)) {
-            size_t index = argument->enum_count++;
-            argument->enum_ids[index] = id->valueint;
-            copy_text(argument->enum_values[index], MATTER_VM_TEXT_MAX,
-                      label->valuestring);
-        }
+        char *copy = strdup(label);
+        if (!copy) return ESP_ERR_NO_MEM;
+        size_t index = argument->enum_count++;
+        argument->enum_ids[index] = mode_id;
+        argument->enum_values[index] = copy;
     }
+    return ESP_OK;
 }
 
 static esp_err_t parse_actions(const cJSON *actions, uint16_t endpoint,
@@ -285,8 +297,9 @@ static esp_err_t parse_actions(const cJSON *actions, uint16_t endpoint,
         }
         const cJSON *argument = NULL;
         cJSON_ArrayForEach(argument, arguments) {
-            parse_argument(argument,
-                           &action->arguments[action->argument_count++]);
+            esp_err_t error = parse_argument(
+                argument, &action->arguments[action->argument_count++]);
+            if (error != ESP_OK) return error;
         }
     }
     return ESP_OK;
@@ -384,6 +397,16 @@ void matter_vm_free_detail(matter_vm_detail_t *detail)
 {
     if (!detail) return;
     free(detail->properties);
+    for (size_t index = 0; detail->actions && index < detail->action_count; ++index) {
+        matter_vm_action_t *action = &detail->actions[index];
+        for (size_t arg = 0; arg < action->argument_count; ++arg) {
+            matter_vm_argument_t *argument = &action->arguments[arg];
+            for (size_t choice = 0; choice < argument->enum_count; ++choice)
+                free(argument->enum_values[choice]);
+            free(argument->enum_values);
+            free(argument->enum_ids);
+        }
+    }
     free(detail->actions);
     memset(detail, 0, sizeof(*detail));
 }

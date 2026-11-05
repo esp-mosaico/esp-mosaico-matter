@@ -338,7 +338,7 @@ esp_err_t fabric_manager_delete(fabric_manager_handle_t manager)
     while (manager->reports) {
         auto *transaction = manager->reports;
         manager->reports = transaction->next;
-        free(transaction);
+        data_model::free_report(transaction);
     }
     data_model::model::free(&manager->set);
     if (manager->nvs)
