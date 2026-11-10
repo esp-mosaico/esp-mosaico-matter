@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include "http_server_priv.h"
+#include "http_server_claw_priv.h"
 
 #include "lua_module_http_server.h"
 

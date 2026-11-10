@@ -1,5 +1,7 @@
 import type { Component } from 'solid-js';
 import { t } from '../../i18n';
+import { appStatus } from '../../state/config';
+import { restartAvailable } from '../../state/features';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 
@@ -13,7 +15,7 @@ type RestartConfirmModalProps = {
 export const RestartConfirmModal: Component<RestartConfirmModalProps> = (props) => {
   return (
     <Modal
-      open={props.open}
+      open={props.open && restartAvailable(appStatus())}
       onClose={props.onClose}
       title={t('restartConfirmTitle')}
       subtitle={props.subtitle ?? (t('restartConfirmBody') as string)}

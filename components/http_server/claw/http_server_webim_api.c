@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include "http_server_priv.h"
+#include "http_server_claw_priv.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -201,7 +201,14 @@ static esp_err_t webim_ws_queue_json_to_fds(const int *fds, size_t fd_count, con
     job->fd_count = fd_count;
     memcpy(job->fds, fds, fd_count * sizeof(int));
 
-    err = httpd_queue_work(s_httpd, webim_ws_broadcast_job_run, job);
+    if (!s_ws_mx) {
+        err = ESP_ERR_INVALID_STATE;
+    } else {
+        xSemaphoreTake(s_ws_mx, portMAX_DELAY);
+        err = s_httpd ? httpd_queue_work(s_httpd, webim_ws_broadcast_job_run, job) :
+                       ESP_ERR_INVALID_STATE;
+        xSemaphoreGive(s_ws_mx);
+    }
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "WS queue failed: %s", esp_err_to_name(err));
@@ -280,6 +287,19 @@ esp_err_t http_server_webim_bind_im(void)
         ESP_LOGW(TAG, "Web IM bind failed: %s", esp_err_to_name(err));
     }
     return err;
+}
+
+void http_server_webim_stop(void)
+{
+    if (s_webim_bound) {
+        (void)cap_im_local_set_outbound_callback(NULL, NULL);
+    }
+    s_webim_bound = false;
+    if (s_ws_mx) xSemaphoreTake(s_ws_mx, portMAX_DELAY);
+    s_httpd = NULL;
+    s_ws_count = 0;
+    s_current_chat_id[0] = '\0';
+    if (s_ws_mx) xSemaphoreGive(s_ws_mx);
 }
 
 esp_err_t http_server_webim_send_current(const char *message)

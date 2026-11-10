@@ -6,7 +6,8 @@ import { StaticConfigBlock } from '../components/ui/ConfigBlocks';
 import { Button } from '../components/ui/Button';
 import { RestartConfirmModal } from '../components/system/RestartConfirmModal';
 import { appStatus, reloadStatus } from '../state/config';
-import { fetchMatterDevices } from '../api/client';
+import { restartAvailable } from '../state/features';
+import { fetchMatterBridgeDevices, fetchMatterDevices } from '../api/client';
 import { pushToast } from '../state/toast';
 
 const formatBytes = (bytes?: number): string | undefined => {
@@ -45,7 +46,9 @@ export const StatusPage: Component<{ onRestartRequest: () => void }> = (props) =
       return;
     }
     try {
-      const devices = await fetchMatterDevices();
+      const devices = appStatus()?.matter_role === 'bridge'
+        ? (await fetchMatterBridgeDevices()).filter((device) => device.active)
+        : await fetchMatterDevices();
       setMatterDeviceCount(devices.length);
     } catch {
       setMatterDeviceCount(null);
@@ -74,9 +77,11 @@ export const StatusPage: Component<{ onRestartRequest: () => void }> = (props) =
             <Button size="sm" variant="secondary" onClick={reload}>
               {t('sysInfoReload')}
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => setConfirmOpen(true)}>
-              {t('sysInfoRestart')}
-            </Button>
+            <Show when={restartAvailable(appStatus())}>
+              <Button size="sm" variant="secondary" onClick={() => setConfirmOpen(true)}>
+                {t('sysInfoRestart')}
+              </Button>
+            </Show>
           </>
         }
       />

@@ -14,6 +14,12 @@ import { t } from '../i18n';
 import type { AppConfig, WechatLoginStatus } from '../api/client';
 import { cancelWechatLogin, pollWechatLoginStatus, startWechatLogin } from '../api/client';
 import { createConfigTab } from '../state/configTab';
+import { appCapabilities, appStatus } from '../state/config';
+import {
+  filterCapabilityConfig,
+  imPlatformAvailable,
+  wechatLoginAvailable,
+} from '../state/features';
 import { TabShell } from '../components/layout/TabShell';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TextInput, SelectInput } from '../components/ui/FormField';
@@ -142,6 +148,7 @@ type WechatConfigProps = {
 
 const WechatConfig: Component<WechatConfigProps> = (props) => {
   const [showAdvanced, setShowAdvanced] = createSignal(false);
+  const supportsWechatLogin = () => wechatLoginAvailable(appStatus());
 
   const handleLoginComplete = (data: WechatLoginStatus) => {
     /* Expand advanced so user can see filled fields */
@@ -151,20 +158,22 @@ const WechatConfig: Component<WechatConfigProps> = (props) => {
 
   return (
     <div class="flex flex-col gap-3 pt-2">
-      <WechatQrPanel onComplete={handleLoginComplete} />
+      <Show when={supportsWechatLogin()}>
+        <WechatQrPanel onComplete={handleLoginComplete} />
 
-      {/* Advanced settings toggle */}
-      <button
-        type="button"
-        class="flex items-center gap-1.5 text-[0.82rem] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors w-fit"
-        onClick={() => setShowAdvanced((v) => !v)}
-        aria-expanded={showAdvanced()}
-      >
-        <ChevronIcon open={showAdvanced()} />
-        <span>{t('imAdvancedSettings')}</span>
-      </button>
+        {/* Advanced settings toggle */}
+        <button
+          type="button"
+          class="flex items-center gap-1.5 text-[0.82rem] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors w-fit"
+          onClick={() => setShowAdvanced((v) => !v)}
+          aria-expanded={showAdvanced()}
+        >
+          <ChevronIcon open={showAdvanced()} />
+          <span>{t('imAdvancedSettings')}</span>
+        </button>
+      </Show>
 
-      <Show when={showAdvanced()}>
+      <Show when={!supportsWechatLogin() || showAdvanced()}>
         <div class="grid gap-3 sm:grid-cols-2 pt-1">
           <TextInput
             type="password"
@@ -354,18 +363,22 @@ export const ImPage: Component = () => {
       feishu_app_secret: config.feishu_app_secret ?? '',
       tg_bot_token: config.tg_bot_token ?? '',
     }),
-    fromForm: (form) => ({
-      wechat_token: form.wechat_token,
-      wechat_base_url: form.wechat_base_url.trim(),
-      wechat_cdn_base_url: form.wechat_cdn_base_url.trim(),
-      wechat_account_id: form.wechat_account_id.trim(),
-      qq_app_id: form.qq_app_id.trim(),
-      qq_app_secret: form.qq_app_secret,
-      qq_msg_type: form.qq_msg_type,
-      feishu_app_id: form.feishu_app_id.trim(),
-      feishu_app_secret: form.feishu_app_secret,
-      tg_bot_token: form.tg_bot_token.trim(),
-    }),
+    fromForm: (form) =>
+      filterCapabilityConfig(
+        {
+          wechat_token: form.wechat_token,
+          wechat_base_url: form.wechat_base_url.trim(),
+          wechat_cdn_base_url: form.wechat_cdn_base_url.trim(),
+          wechat_account_id: form.wechat_account_id.trim(),
+          qq_app_id: form.qq_app_id.trim(),
+          qq_app_secret: form.qq_app_secret,
+          qq_msg_type: form.qq_msg_type,
+          feishu_app_id: form.feishu_app_id.trim(),
+          feishu_app_secret: form.feishu_app_secret,
+          tg_bot_token: form.tg_bot_token.trim(),
+        },
+        appCapabilities(),
+      ),
   });
   const [validationError, setValidationError] = createSignal<string | null>(null);
 
@@ -503,119 +516,129 @@ export const ImPage: Component = () => {
       {/* Platform list — flat rows with dividers, no card borders */}
       <div class="divide-y divide-[var(--color-border-subtle)] mt-2">
         {/* WeChat */}
-        <PlatformRow
-          label={t('imWechatTitle') as string}
-          configured={isWechatConfigured()}
-          open={isOpen('wechat')}
-          onToggle={() => toggle('wechat')}
-          onDelete={() =>
-            clearPlatform(
-              'wechat',
-              ['wechat_token', 'wechat_base_url', 'wechat_cdn_base_url', 'wechat_account_id'],
-              setField,
-            )
-          }
-        >
-          <WechatConfig
-            form={tab.form}
-            setForm={tab.setForm}
-            onLoginComplete={onWechatLoginComplete}
-          />
-        </PlatformRow>
+        <Show when={imPlatformAvailable('wechat', appCapabilities())}>
+          <PlatformRow
+            label={t('imWechatTitle') as string}
+            configured={isWechatConfigured()}
+            open={isOpen('wechat')}
+            onToggle={() => toggle('wechat')}
+            onDelete={() =>
+              clearPlatform(
+                'wechat',
+                ['wechat_token', 'wechat_base_url', 'wechat_cdn_base_url', 'wechat_account_id'],
+                setField,
+              )
+            }
+          >
+            <WechatConfig
+              form={tab.form}
+              setForm={tab.setForm}
+              onLoginComplete={onWechatLoginComplete}
+            />
+          </PlatformRow>
+        </Show>
 
         {/* QQ */}
-        <PlatformRow
-          label={t('imQqTitle') as string}
-          configured={isQqConfigured()}
-          open={isOpen('qq')}
-          onToggle={() => toggle('qq')}
-          onDelete={() => clearPlatform('qq', ['qq_app_id', 'qq_app_secret'], setField)}
-        >
-          <div class="grid gap-3 sm:grid-cols-2 pt-2">
-            <TextInput
-              label={t('qqAppId')}
-              value={tab.form.qq_app_id}
-              onInput={(e) => tab.setForm('qq_app_id', e.currentTarget.value)}
-            />
-            <TextInput
-              type="password"
-              label={
-                <>
-                  {t('qqAppSecret')}
-                  <LabelLink href={IM_CREDENTIAL_URLS.qq}>
-                    {t('imGetCredentials') as string} ↗
-                  </LabelLink>
-                </>
-              }
-              value={tab.form.qq_app_secret}
-              onInput={(e) => tab.setForm('qq_app_secret', e.currentTarget.value)}
-            />
-            <SelectInput
-              label={t('qqMsgType')}
-              value={tab.form.qq_msg_type}
-              onChange={(e) => tab.setForm('qq_msg_type', e.currentTarget.value)}
-            >
-              <option value="0">{t('qqMsgTypePlain')}</option>
-              <option value="2">{t('qqMsgTypeMarkdown')}</option>
-            </SelectInput>
-          </div>
-        </PlatformRow>
+        <Show when={imPlatformAvailable('qq', appCapabilities())}>
+          <PlatformRow
+            label={t('imQqTitle') as string}
+            configured={isQqConfigured()}
+            open={isOpen('qq')}
+            onToggle={() => toggle('qq')}
+            onDelete={() => clearPlatform('qq', ['qq_app_id', 'qq_app_secret'], setField)}
+          >
+            <div class="grid gap-3 sm:grid-cols-2 pt-2">
+              <TextInput
+                label={t('qqAppId')}
+                value={tab.form.qq_app_id}
+                onInput={(e) => tab.setForm('qq_app_id', e.currentTarget.value)}
+              />
+              <TextInput
+                type="password"
+                label={
+                  <>
+                    {t('qqAppSecret')}
+                    <LabelLink href={IM_CREDENTIAL_URLS.qq}>
+                      {t('imGetCredentials') as string} ↗
+                    </LabelLink>
+                  </>
+                }
+                value={tab.form.qq_app_secret}
+                onInput={(e) => tab.setForm('qq_app_secret', e.currentTarget.value)}
+              />
+              <SelectInput
+                label={t('qqMsgType')}
+                value={tab.form.qq_msg_type}
+                onChange={(e) => tab.setForm('qq_msg_type', e.currentTarget.value)}
+              >
+                <option value="0">{t('qqMsgTypePlain')}</option>
+                <option value="2">{t('qqMsgTypeMarkdown')}</option>
+              </SelectInput>
+            </div>
+          </PlatformRow>
+        </Show>
 
         {/* Feishu */}
-        <PlatformRow
-          label={t('imFeishuTitle') as string}
-          configured={isFeishuConfigured()}
-          open={isOpen('feishu')}
-          onToggle={() => toggle('feishu')}
-          onDelete={() => clearPlatform('feishu', ['feishu_app_id', 'feishu_app_secret'], setField)}
-        >
-          <div class="grid gap-3 sm:grid-cols-2 pt-2">
-            <TextInput
-              label={t('feishuAppId')}
-              value={tab.form.feishu_app_id}
-              onInput={(e) => tab.setForm('feishu_app_id', e.currentTarget.value)}
-            />
-            <TextInput
-              type="password"
-              label={
-                <>
-                  {t('feishuAppSecret')}
-                  <LabelLink href={IM_CREDENTIAL_URLS.feishu}>
-                    {t('imGetCredentials') as string} ↗
-                  </LabelLink>
-                </>
-              }
-              value={tab.form.feishu_app_secret}
-              onInput={(e) => tab.setForm('feishu_app_secret', e.currentTarget.value)}
-            />
-          </div>
-        </PlatformRow>
+        <Show when={imPlatformAvailable('feishu', appCapabilities())}>
+          <PlatformRow
+            label={t('imFeishuTitle') as string}
+            configured={isFeishuConfigured()}
+            open={isOpen('feishu')}
+            onToggle={() => toggle('feishu')}
+            onDelete={() =>
+              clearPlatform('feishu', ['feishu_app_id', 'feishu_app_secret'], setField)
+            }
+          >
+            <div class="grid gap-3 sm:grid-cols-2 pt-2">
+              <TextInput
+                label={t('feishuAppId')}
+                value={tab.form.feishu_app_id}
+                onInput={(e) => tab.setForm('feishu_app_id', e.currentTarget.value)}
+              />
+              <TextInput
+                type="password"
+                label={
+                  <>
+                    {t('feishuAppSecret')}
+                    <LabelLink href={IM_CREDENTIAL_URLS.feishu}>
+                      {t('imGetCredentials') as string} ↗
+                    </LabelLink>
+                  </>
+                }
+                value={tab.form.feishu_app_secret}
+                onInput={(e) => tab.setForm('feishu_app_secret', e.currentTarget.value)}
+              />
+            </div>
+          </PlatformRow>
+        </Show>
 
         {/* Telegram */}
-        <PlatformRow
-          label={t('imTelegramTitle') as string}
-          configured={isTelegramConfigured()}
-          open={isOpen('telegram')}
-          onToggle={() => toggle('telegram')}
-          onDelete={() => clearPlatform('telegram', ['tg_bot_token'], setField)}
-        >
-          <div class="pt-2">
-            <TextInput
-              full
-              type="password"
-              label={
-                <>
-                  {t('tgBotToken')}
-                  <LabelLink href={IM_CREDENTIAL_URLS.telegram}>
-                    {t('imGetCredentials') as string} ↗
-                  </LabelLink>
-                </>
-              }
-              value={tab.form.tg_bot_token}
-              onInput={(e) => tab.setForm('tg_bot_token', e.currentTarget.value)}
-            />
-          </div>
-        </PlatformRow>
+        <Show when={imPlatformAvailable('telegram', appCapabilities())}>
+          <PlatformRow
+            label={t('imTelegramTitle') as string}
+            configured={isTelegramConfigured()}
+            open={isOpen('telegram')}
+            onToggle={() => toggle('telegram')}
+            onDelete={() => clearPlatform('telegram', ['tg_bot_token'], setField)}
+          >
+            <div class="pt-2">
+              <TextInput
+                full
+                type="password"
+                label={
+                  <>
+                    {t('tgBotToken')}
+                    <LabelLink href={IM_CREDENTIAL_URLS.telegram}>
+                      {t('imGetCredentials') as string} ↗
+                    </LabelLink>
+                  </>
+                }
+                value={tab.form.tg_bot_token}
+                onInput={(e) => tab.setForm('tg_bot_token', e.currentTarget.value)}
+              />
+            </div>
+          </PlatformRow>
+        </Show>
       </div>
 
       <SavePanel

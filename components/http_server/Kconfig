@@ -1,0 +1,10 @@
+menu "HTTP management server"
+    config HTTP_SERVER_CLAW_ENABLE
+        bool "Enable Claw web features"
+        default y
+        help
+            Enable Claw settings, chat, memory, capabilities, skills and Lua
+            web routes. Disabling this affects only the web management UI;
+            the firmware's Claw runtime continues to operate. System status,
+            network/time settings, Matter management and files remain available.
+endmenu

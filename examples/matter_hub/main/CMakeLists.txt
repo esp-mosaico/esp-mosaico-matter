@@ -43,9 +43,9 @@ else()
 endif()
 
 idf_component_register(
-    SRC_DIRS "." "platform"
+    SRC_DIRS "." "platform" "../../common"
     EXCLUDE_SRCS ${main_exclude_srcs}
-    INCLUDE_DIRS "." "platform"
+    INCLUDE_DIRS "." "platform" "../../common"
     LDFRAGMENTS ${main_ldfragments}
     EMBED_FILES ${main_embed_files}
     PRIV_REQUIRES ${main_priv_requires}

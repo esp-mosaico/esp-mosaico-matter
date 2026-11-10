@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(UPSTREAM "${REPO_ROOT}/third_party/esp-mosaico-claw")
-# Select components explicitly: the repo's http_server is a controller fork.
-# Keep the controller-only stack out of this example. mosaico_ui's CMake
+# Select components explicitly and keep the controller stack out of this example.
+# mosaico_ui's CMake
 # optional_requires the matching backend, but its YAML must not path-depend
 # on local_fabric/claw_matter_controller (that would pull them into this
 # project). EXCLUDE_COMPONENTS is belt-and-braces if another dep lists them.
 list(APPEND EXCLUDE_COMPONENTS local_fabric claw_matter_controller thread_border_router)
 list(APPEND EXTRA_COMPONENT_DIRS
+    "${REPO_ROOT}/components/http_server"
     "${REPO_ROOT}/components/matter_bridge"
     "${REPO_ROOT}/components/claw_matter_bridge"
     "${REPO_ROOT}/components/mosaico_ui"
@@ -28,6 +29,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
 set(MOSAICO_UI_APP_MANIFESTS hub welcome ai_create settings setup_center matter_bridge
     CACHE STRING "" FORCE)
 set(MOSAICO_UI_WITH_MATTER_BRIDGE ON CACHE BOOL "" FORCE)
+set(HTTP_SERVER_MATTER_BACKEND bridge CACHE STRING "HTTP Matter backend" FORCE)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 

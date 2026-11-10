@@ -9,7 +9,15 @@ import { Banner } from './components/ui/Banner';
 import { ToastViewport } from './components/ui/ToastViewport';
 import { t } from './i18n';
 import { anyDirty, type TabId } from './state/dirty';
-import { reloadCapabilities, reloadLuaModules, reloadStatus } from './state/config';
+import {
+  appCapabilities,
+  appStatus,
+  capabilitiesLoaded,
+  reloadCapabilities,
+  reloadLuaModules,
+  reloadStatus,
+} from './state/config';
+import { restartAvailable, routeAvailable, routeNeedsCapabilities } from './state/features';
 import { pushToast } from './state/toast';
 
 const StatusPage = lazy(() =>
@@ -44,6 +52,10 @@ const MatterPage = lazy(() =>
 );
 const SetupWizardPage = lazy(() =>
   import('./pages/SetupWizardPage').then((mod) => ({ default: mod.SetupWizardPage })),
+);
+
+const MatterBridgePage = lazy(() =>
+  import('./pages/MatterBridgePage').then((mod) => ({ default: mod.MatterBridgePage })),
 );
 
 type RouteId = TabId | 'start';
@@ -117,13 +129,29 @@ const App: Component = () => {
     window.location.hash = '#' + currentTab();
   });
 
+  createEffect(() => {
+    if (
+      appStatus() &&
+      (!appStatus()?.claw_enabled || !routeNeedsCapabilities(currentTab()) || capabilitiesLoaded()) &&
+      !routeAvailable(currentTab(), appStatus(), appCapabilities())
+    ) {
+      setCurrentTab(currentTab() === 'start' ? 'basic' : 'status');
+    }
+  });
+
   const handleSelectTab = (next: TabId) => {
     setCurrentTab(next);
   };
 
   const bootstrap = async () => {
+    try {
+      await reloadStatus();
+    } catch (err) {
+      setBootError((err as Error).message);
+      return;
+    }
+    if (!appStatus()?.claw_enabled) return;
     const tasks: Array<[string, () => Promise<unknown>]> = [
-      ['status', () => reloadStatus()],
       ['capabilities', () => reloadCapabilities()],
       ['luaModules', () => reloadLuaModules()],
     ];
@@ -132,11 +160,8 @@ const App: Component = () => {
         await task();
       } catch (err) {
         const message = (err as Error).message || 'Failed to initialise: ' + label;
-        if (label === 'status') {
-          setBootError(message);
-        } else {
-          pushToast(message, 'error', 4500);
-        }
+        if (label === 'capabilities') setBootError(message);
+        pushToast(message, 'error', 4500);
       }
     }
   };
@@ -185,6 +210,7 @@ const App: Component = () => {
   };
 
   const handleRestartRequest = async (options?: RestartRequestOptions) => {
+    if (!restartAvailable(appStatus())) return;
     clearRestartFlow();
     restartActive = true;
     restartTarget = options?.targetTab ?? null;
@@ -228,7 +254,7 @@ const App: Component = () => {
   return (
     <>
       <Show
-        when={currentTab() === 'start'}
+        when={currentTab() === 'start' && appStatus()?.claw_enabled === true}
         fallback={
           <Layout currentTab={currentTab() as TabId} onSelectTab={handleSelectTab}>
             <Show when={bootError()}>
@@ -239,6 +265,7 @@ const App: Component = () => {
             <Suspense
               fallback={<div class="p-6 text-[var(--color-text-muted)]">{t('statusLoading')}</div>}
             >
+              <Show when={appStatus() && routeAvailable(currentTab(), appStatus(), appCapabilities())}>
               <Show when={currentTab() === 'status'}>
                 <StatusPage onRestartRequest={() => void handleRestartRequest()} />
               </Show>
@@ -268,7 +295,9 @@ const App: Component = () => {
                 <WebImPage />
               </Show>
               <Show when={currentTab() === 'matter'}>
-                <MatterPage />
+                <Show when={appStatus()?.matter_role === 'bridge'} fallback={<MatterPage />}>
+                  <MatterBridgePage />
+                </Show>
               </Show>
               <Show when={currentTab() === 'capabilities'}>
                 <CapabilitiesPage
@@ -283,6 +312,7 @@ const App: Component = () => {
               <Show when={currentTab() === 'files'}>
                 <FilesPage />
               </Show>
+              </Show>
             </Suspense>
           </Layout>
         }
@@ -290,9 +320,14 @@ const App: Component = () => {
         <Suspense
           fallback={<div class="p-6 text-[var(--color-text-muted)]">{t('statusLoading')}</div>}
         >
-          <SetupWizardPage
-            onRestartRequest={(targetTab) => void handleRestartRequest({ targetTab })}
-          />
+          <Show
+            when={capabilitiesLoaded()}
+            fallback={<Banner kind={bootError() ? 'error' : 'info'} message={bootError() ?? (t('statusLoading') as string)} />}
+          >
+            <SetupWizardPage
+              onRestartRequest={(targetTab) => void handleRestartRequest({ targetTab })}
+            />
+          </Show>
         </Suspense>
       </Show>
       <RestartOverlay state={restartOverlay()} onClose={closeRestartOverlay} />

@@ -46,7 +46,10 @@ def main() -> int:
     # configuration and headers belong in a compile_commands.json analysis.
     includes = []
     for component in sorted((ROOT / "components").iterdir()):
-        for directory in (component, component / "include", component / "private", component / "dmgr"):
+        for directory in (
+            component, component / "include", component / "private", component / "dmgr",
+            component / "claw" / "include",
+        ):
             if directory.is_dir():
                 includes.extend(["-I", str(directory.relative_to(ROOT))])
 

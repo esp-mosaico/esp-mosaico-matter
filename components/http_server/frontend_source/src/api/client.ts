@@ -51,7 +51,7 @@ export type AppConfig = {
 };
 
 /** Server-side configuration groups (must stay in sync with
- * CONFIG_FIELDS in http_server_config_api.c). */
+ * CONFIG_FIELDS in examples/common/http_app_config.c). */
 export type ConfigGroup =
   | 'wifi'
   | 'llm'
@@ -106,7 +106,7 @@ export const GROUP_FIELDS: Record<ConfigGroup, (keyof AppConfig)[]> = {
 };
 
 /** Sensitive NVS fields masked on GET (must stay in sync with
- * is_sensitive_config_field() in http_server_config_api.c). */
+ * is_sensitive_config_field() in examples/common/http_app_config.c). */
 export const SECRET_CONFIG_FIELDS: readonly (keyof AppConfig)[] = [
   'wifi_password',
   'ap_password',
@@ -162,6 +162,14 @@ export type StatusInfo = {
   wifi_mode: string;
   storage_base_path: string;
   matter_enabled?: boolean;
+  matter_role?: 'controller' | 'bridge' | 'none';
+  claw_enabled?: boolean;
+  webim_supported?: boolean;
+  wechat_login_supported?: boolean;
+  memory_supported?: boolean;
+  asr_supported?: boolean;
+  restart_supported?: boolean;
+  ap_config_supported?: boolean;
   memory?: MemoryInfo;
 };
 
@@ -700,5 +708,39 @@ export function cancelMatterCommission() {
     '/api/matter/commission/cancel',
     jsonInit('POST'),
     'Failed to cancel commissioning',
+  );
+}
+
+export type MatterBridgeInfo = {
+  commissioned: boolean;
+  max_devices: number;
+  qr_code: string;
+  manual_pairing_code: string;
+};
+
+export type MatterBridgeDevice = {
+  id: string;
+  name: string;
+  profile_id: string;
+  device_type: number;
+  endpoint_id: number;
+  active: boolean;
+  reachable: boolean;
+};
+
+export function fetchMatterBridge(signal?: AbortSignal) {
+  return request<MatterBridgeInfo>('/api/matter/bridge', { signal }, 'Failed to load bridge');
+}
+
+export async function fetchMatterBridgeDevices(signal?: AbortSignal) {
+  const data = await request<{ devices: MatterBridgeDevice[] }>(
+    '/api/matter/bridge/devices', { signal }, 'Failed to load bridge devices',
+  );
+  return Array.isArray(data.devices) ? data.devices : [];
+}
+
+export function openMatterBridgeWindow() {
+  return request<{ ok: boolean; duration_seconds: number; transport: 'on_network' | 'ble' }>(
+    '/api/matter/bridge/commissioning-window', jsonInit('POST'), 'Failed to open pairing window',
   );
 }

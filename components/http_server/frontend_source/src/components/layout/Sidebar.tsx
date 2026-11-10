@@ -15,21 +15,13 @@ import {
 } from 'lucide-solid';
 import { createMemo, createSignal, For, Show, type Component } from 'solid-js';
 import { t } from '../../i18n';
-import { appStatus } from '../../state/config';
+import { appCapabilities, appStatus } from '../../state/config';
+import { routeAvailable } from '../../state/features';
 import { isDirty, type TabId } from '../../state/dirty';
-import { Logo, StatusSummary } from './StatusBar';
+import { EspressifMark, Logo, StatusSummary } from './StatusBar';
 
 const iconClass = 'w-4 h-4 shrink-0';
 
-/**
- * ESP-Claw claw glyph — the three rounded quadrants of the mark, lifted from
- * esp-mosaico-claw/third-party/esp-claw/docs/src/assets/logos/logo.svg.
- */
-const ClawGlyph: Component<{ class?: string }> = (props) => (
-  <svg class={props.class} viewBox="0 0 165.4 191.26" fill="#e8362d" aria-hidden="true">
-    <path d="M165.38 113v.06l-.04.54v.04c-1.29 20.81-10.26 39.52-24.09 53.36-15 15-35.69 24.26-58.57 24.26-9.69 0-18.97-1.66-27.6-4.71C24.43 175.72 2.07 147.36.03 113.53c-.01-.15-.03-.32-.03-.47 0-1.27.52-2.42 1.36-3.26s1.98-1.36 3.26-1.36h156.15c1.29 0 2.43.52 3.27 1.36.82.82 1.34 1.96 1.36 3.2zM55.07 37.15v52.87c0 1.27-.52 2.42-1.36 3.26-.82.84-1.98 1.36-3.26 1.36H6.65c-2.54 0-4.61-2.07-4.61-4.61 0-.31.03-.6.08-.88l.13-.49a82.4 82.4 0 0 1 21.86-38.77c7.03-7.03 15.3-12.8 24.47-16.95.03-.01.04-.01.07-.03.54-.24 1.16-.36 1.8-.36 1.27 0 2.43.52 3.26 1.36.84.82 1.36 1.98 1.36 3.26zm108.26 52.87c0 1.27-.52 2.42-1.36 3.26s-2 1.36-3.27 1.36H87.28c-2.54 0-4.61-2.07-4.61-4.61V4.61c0-1.27.52-2.43 1.36-3.27a4.645 4.645 0 0 1 5.06-.98c.14.06.27.13.41.2 14.45 6.65 27.52 15.83 38.64 26.96 15.44 15.44 27.14 34.65 33.58 56.13.03.06.04.13.06.18.46 1.5.88 3.01 1.27 4.53.03.1.06.2.07.31.01.03.01.06.03.08.03.13.07.25.08.38.07.29.1.6.1.91z" />
-  </svg>
-);
 
 const IconStatus: Component = () => <Activity class={iconClass} />;
 const IconGear: Component = () => <Settings class={iconClass} />;
@@ -99,10 +91,7 @@ export const LEAF_IDS = collectLeafIds(NAV_TREE);
 
 /** Leaf nodes hidden until a runtime capability flag turns them on. */
 function isNodeVisible(node: NavNode): boolean {
-  if (node.kind === 'leaf' && node.id === 'matter') {
-    return appStatus()?.matter_enabled === true;
-  }
-  return true;
+  return node.kind !== 'leaf' || routeAvailable(node.id, appStatus(), appCapabilities());
 }
 
 /** A group is shown only when at least one of its children is visible. */
@@ -328,7 +317,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   when={isMobileDrawer()}
                   fallback={<Logo class="min-w-0" />}
                 >
-                  <ClawGlyph class="w-6 h-6 shrink-0" />
+                  <EspressifMark class="w-6 h-6 shrink-0" />
                   <StatusSummary compact class="text-[0.74rem]" />
                 </Show>
               </div>
@@ -379,7 +368,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             class="inline-flex items-center justify-center w-10 h-10 rounded-[var(--radius-sm)] hover:bg-white/5 transition"
             aria-label={t('toggleSidebar') as string}
           >
-            <ClawGlyph class="w-6 h-6" />
+            <EspressifMark class="w-6 h-6" />
           </button>
         </Show>
       </div>

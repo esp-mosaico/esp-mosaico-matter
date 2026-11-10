@@ -25,6 +25,11 @@ http_server_ctx_t *http_server_ctx(void)
 
 esp_err_t http_server_captive_404_handler(httpd_req_t *req, httpd_err_code_t error)
 {
+    if (strncmp(req->uri, "/api/", 5) == 0 ||
+        strncmp(req->uri, "/ws/", 4) == 0 ||
+        strncmp(req->uri, "/lua/", 5) == 0) {
+        return httpd_resp_send_err(req, error, NULL);
+    }
     http_server_wifi_status_t status = {0};
     esp_err_t err = s_ctx.services.get_wifi_status ? s_ctx.services.get_wifi_status(&status) : ESP_ERR_INVALID_STATE;
     if (err != ESP_OK || !status.ap_active) {
@@ -49,25 +54,35 @@ esp_err_t http_server_init(const http_server_config_t *config)
     if (!config || !config->storage_base_path || config->storage_base_path[0] != '/') {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!config->services.load_config || !config->services.save_config || !config->services.get_wifi_status) {
+    if (!config->services.read_config || !config->services.patch_config || !config->services.get_wifi_status) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (s_ctx.server) {
+        return ESP_ERR_INVALID_STATE;
     }
 
     memset(&s_ctx, 0, sizeof(s_ctx));
     strlcpy(s_ctx.storage_base_path, config->storage_base_path, sizeof(s_ctx.storage_base_path));
     s_ctx.services = config->services;
+    s_ctx.extension = config->extension;
+    s_ctx.claw_enabled = config->claw_enabled;
+    s_ctx.ap_config_supported = config->ap_config_supported;
+    s_ctx.asr_supported = config->asr_supported;
     return ESP_OK;
 }
 
 static void http_server_close_fn(httpd_handle_t hd, int sockfd)
 {
     (void)hd;
-    http_server_webim_ws_fd_remove(sockfd);
+    if (s_ctx.extension.close_session) {
+        s_ctx.extension.close_session(sockfd);
+    }
     close(sockfd);
 }
 
 esp_err_t http_server_start(void)
 {
+    if (!s_ctx.services.read_config) return ESP_ERR_INVALID_STATE;
     if (s_ctx.server) {
         return ESP_OK;
     }
@@ -92,22 +107,29 @@ esp_err_t http_server_start(void)
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     ESP_RETURN_ON_ERROR(httpd_start(&s_ctx.server, &config), TAG, "Failed to start HTTP server");
-    ESP_RETURN_ON_ERROR(http_server_register_assets_routes(s_ctx.server), TAG, "Failed to register assets routes");
-    ESP_RETURN_ON_ERROR(http_server_register_capabilities_routes(s_ctx.server), TAG, "Failed to register capability routes");
-    ESP_RETURN_ON_ERROR(http_server_register_lua_modules_routes(s_ctx.server), TAG, "Failed to register Lua module routes");
-    ESP_RETURN_ON_ERROR(http_server_register_config_routes(s_ctx.server), TAG, "Failed to register config routes");
-    ESP_RETURN_ON_ERROR(http_server_register_status_routes(s_ctx.server), TAG, "Failed to register status routes");
-    ESP_RETURN_ON_ERROR(http_server_register_files_routes(s_ctx.server), TAG, "Failed to register files routes");
-#if CONFIG_APP_CLAW_LUA_MODULE_HTTP_SERVER
-    ESP_RETURN_ON_ERROR(http_server_register_lua_app_routes(s_ctx.server), TAG, "Failed to register Lua app routes");
-#endif
-    ESP_RETURN_ON_ERROR(http_server_register_wechat_routes(s_ctx.server), TAG, "Failed to register WeChat routes");
-    ESP_RETURN_ON_ERROR(http_server_register_webim_routes(s_ctx.server), TAG, "Failed to register Web IM routes");
-    ESP_RETURN_ON_ERROR(http_server_register_matter_routes(s_ctx.server), TAG, "Failed to register Matter routes");
-    ESP_RETURN_ON_ERROR(httpd_register_err_handler(s_ctx.server, HTTPD_404_NOT_FOUND, http_server_captive_404_handler),
-                        TAG, "Failed to register captive 404 handler");
-
-    return ESP_OK;
+    esp_err_t (*const registrars[])(httpd_handle_t) = {
+        http_server_register_assets_routes,
+        http_server_register_config_routes,
+        http_server_register_status_routes,
+        http_server_register_files_routes,
+        http_server_register_matter_routes,
+        s_ctx.extension.register_routes,
+    };
+    esp_err_t err = ESP_OK;
+    for (size_t i = 0; i < sizeof(registrars) / sizeof(registrars[0]); ++i) {
+        if (registrars[i] && (err = registrars[i](s_ctx.server)) != ESP_OK) {
+            break;
+        }
+    }
+    if (err == ESP_OK) {
+        err = httpd_register_err_handler(s_ctx.server, HTTPD_404_NOT_FOUND,
+                                        http_server_captive_404_handler);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "HTTP route registration failed: %s", esp_err_to_name(err));
+        (void)http_server_stop();
+    }
+    return err;
 }
 
 esp_err_t http_server_stop(void)
@@ -116,6 +138,9 @@ esp_err_t http_server_stop(void)
         return ESP_OK;
     }
 
+    if (s_ctx.extension.stop) {
+        s_ctx.extension.stop();
+    }
     esp_err_t err = httpd_stop(s_ctx.server);
     if (err == ESP_OK) {
         s_ctx.server = NULL;

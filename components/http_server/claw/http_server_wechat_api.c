@@ -3,14 +3,59 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include "http_server_priv.h"
+#include "http_server_claw_priv.h"
 
 #include <stdlib.h>
 #include <string.h>
 
+#if CONFIG_APP_CLAW_CAP_IM_WECHAT
+#include "cap_im_wechat.h"
+
+static esp_err_t wechat_login_start(const char *account_id, bool force)
+{
+    return cap_im_wechat_qr_login_start(account_id, force);
+}
+
+static esp_err_t wechat_login_get_status(http_server_wechat_login_status_t *status)
+{
+    if (!status) return ESP_ERR_INVALID_ARG;
+    cap_im_wechat_qr_login_status_t *raw = calloc(1, sizeof(*raw));
+    if (!raw) return ESP_ERR_NO_MEM;
+    esp_err_t err = cap_im_wechat_qr_login_get_status(raw);
+    if (err == ESP_OK) {
+        memset(status, 0, sizeof(*status));
+        status->active = raw->active;
+        status->configured = raw->configured;
+        status->completed = raw->completed;
+        status->persisted = raw->persisted;
+        strlcpy(status->session_key, raw->session_key, sizeof(status->session_key));
+        strlcpy(status->status, raw->status, sizeof(status->status));
+        strlcpy(status->message, raw->message, sizeof(status->message));
+        strlcpy(status->qr_data_url, raw->qr_data_url, sizeof(status->qr_data_url));
+        strlcpy(status->account_id, raw->account_id, sizeof(status->account_id));
+        strlcpy(status->user_id, raw->user_id, sizeof(status->user_id));
+        strlcpy(status->token, raw->token, sizeof(status->token));
+        strlcpy(status->base_url, raw->base_url, sizeof(status->base_url));
+    }
+    free(raw);
+    return err;
+}
+#endif
+
+http_server_claw_services_t http_server_claw_wechat_services(void)
+{
+    http_server_claw_services_t services = {0};
+#if CONFIG_APP_CLAW_CAP_IM_WECHAT
+    services.wechat_login_start = wechat_login_start;
+    services.wechat_login_get_status = wechat_login_get_status;
+    services.wechat_login_cancel = cap_im_wechat_qr_login_cancel;
+#endif
+    return services;
+}
+
 static esp_err_t wechat_login_start_handler(httpd_req_t *req)
 {
-    http_server_ctx_t *ctx = http_server_ctx();
+    http_server_claw_ctx_t *ctx = http_server_claw_ctx();
     cJSON *root = NULL;
     http_server_wechat_login_status_t *status = NULL;
     const char *account_id = NULL;
@@ -64,7 +109,7 @@ static esp_err_t wechat_login_start_handler(httpd_req_t *req)
 
 static esp_err_t wechat_login_status_handler(httpd_req_t *req)
 {
-    http_server_ctx_t *ctx = http_server_ctx();
+    http_server_claw_ctx_t *ctx = http_server_claw_ctx();
     http_server_wechat_login_status_t *status = NULL;
     esp_err_t err;
 
@@ -115,7 +160,7 @@ static esp_err_t wechat_login_status_handler(httpd_req_t *req)
 
 static esp_err_t wechat_login_cancel_handler(httpd_req_t *req)
 {
-    http_server_ctx_t *ctx = http_server_ctx();
+    http_server_claw_ctx_t *ctx = http_server_claw_ctx();
     esp_err_t err = ctx->services.wechat_login_cancel ? ctx->services.wechat_login_cancel() : ESP_ERR_INVALID_STATE;
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to cancel WeChat login");

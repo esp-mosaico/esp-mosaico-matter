@@ -1,7 +1,19 @@
 import type { Dict } from './en';
 
 export const zhCn: Dict = {
-  docTitle: 'ESP-Claw Matter 中枢',
+  bridgeTitle: 'Matter 桥接器',
+  bridgeDescription: '查看桥接状态、配对信息与本地设备。',
+  bridgeCommissioned: '已与 Matter 控制器配对',
+  bridgeUncommissioned: '尚未配对',
+  bridgePairing: '配对桥接器',
+  bridgePairingHint: '打开 180 秒配对窗口后，在 Matter 控制器中扫描二维码或输入手动配对码。',
+  bridgeOpenWindow: '打开配对窗口',
+  bridgeWindowOpened: '已打开 180 秒配对窗口。',
+  bridgeDevices: '桥接设备',
+  bridgeEmpty: '暂无桥接设备。',
+  bridgeEndpoint: '端点',
+  bridgeInactive: '未激活',
+  docTitle: 'Mosaico Matter',
   pageTitle: '设备设置',
   pageSubtitle: '查看系统运作基本信息与状态',
 
@@ -13,7 +25,6 @@ export const zhCn: Dict = {
   toggleSidebar: '切换侧边栏',
   closeMenu: '关闭导航菜单',
   externalHome: '主页',
-  externalDocs: '文档',
   externalGithub: 'GitHub',
 
   navStatus: '系统状态',
@@ -225,6 +236,7 @@ export const zhCn: Dict = {
   capabilityLlmDefaults: '恢复 LLM 集合',
   capabilityLlmClear: '清空 LLM',
   capabilityLoading: '正在加载 capability...',
+  capabilityEmpty: '当前固件未提供 capability。',
   capabilityLoadError: '加载 capability 列表失败',
   capabilityNameCol: 'Capability',
   capabilityEnabled: '启用',
@@ -238,6 +250,8 @@ export const zhCn: Dict = {
   luaModulesSelectAll: '全选',
   luaModulesClearAll: '清空',
   luaModulesLoading: '正在加载 Lua 模块...',
+  luaModulesUnavailable: '当前固件不支持 Lua。',
+  luaModulesEmpty: '当前固件未提供 Lua 模块。',
   luaModulesLoadError: '加载 Lua 模块列表失败',
   luaModulesCapabilityRequired:
     '需先在 Capabilities 管理中启用 cap_lua 并保存，Lua 模块配置才会生效。',

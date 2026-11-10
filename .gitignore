@@ -12,6 +12,7 @@ __pycache__/
 *.py[cod]
 .venv/
 .ruff_cache/
+.pnpm-store/
 
 # Editor and OS files
 .vscode/

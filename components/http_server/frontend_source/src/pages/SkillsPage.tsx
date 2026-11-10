@@ -1,7 +1,15 @@
 import { createMemo, createSignal, For, Show, type Component } from 'solid-js';
 import { t, tf } from '../i18n';
 import type { AppConfig, LuaModuleItem } from '../api/client';
-import { appCapabilities, appConfig, appLuaModules } from '../state/config';
+import {
+  appCapabilities,
+  appConfig,
+  appLuaModules,
+  capabilitiesLoaded,
+  luaModulesError,
+  luaModulesLoaded,
+} from '../state/config';
+import { capabilityEnabled, capabilitySupported, filterCapabilityConfig } from '../state/features';
 import { createConfigTab } from '../state/configTab';
 import { TabShell } from '../components/layout/TabShell';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -37,15 +45,7 @@ function serializeModules(selected: string[], items: LuaModuleItem[]): string {
 }
 
 function isCapLuaEnabled(): boolean {
-  const raw = (appConfig().enabled_cap_groups || '').trim();
-  if (!raw) {
-    return appCapabilities().some((item) => item.group_id === 'cap_lua');
-  }
-  if (raw === SENTINEL_NONE || raw === 'none') return false;
-  return raw
-    .split(',')
-    .map((token) => token.trim())
-    .includes('cap_lua');
+  return capabilityEnabled(appCapabilities(), 'cap_lua', appConfig().enabled_cap_groups ?? '');
 }
 
 export const SkillsPage: Component<{ onRestartRequest: () => void }> = (props) => {
@@ -55,9 +55,13 @@ export const SkillsPage: Component<{ onRestartRequest: () => void }> = (props) =
     toForm: (config: Partial<AppConfig>) => ({
       enabled: parseModules(config.enabled_lua_modules ?? '', appLuaModules(), true),
     }),
-    fromForm: (form) => ({
-      enabled_lua_modules: serializeModules(form.enabled, appLuaModules()),
-    }),
+    fromForm: (form) =>
+      filterCapabilityConfig(
+        {
+          enabled_lua_modules: serializeModules(form.enabled, appLuaModules()),
+        },
+        appCapabilities(),
+      ),
     isDirty: (form, baseline) => {
       const a = new Set(form.enabled);
       const b = new Set(baseline.enabled);
@@ -117,7 +121,10 @@ export const SkillsPage: Component<{ onRestartRequest: () => void }> = (props) =
         description={t('luaModulesDescription') as string}
       />
       <div class="px-5 py-4 flex flex-col gap-3 border-b border-[var(--color-border-subtle)]">
-        <Show when={!isCapLuaEnabled()}>
+        <Show when={capabilitiesLoaded() && !capabilitySupported(appCapabilities(), 'cap_lua')}>
+          <Banner kind="info" message={t('luaModulesUnavailable') as string} />
+        </Show>
+        <Show when={capabilitySupported(appCapabilities(), 'cap_lua') && !isCapLuaEnabled()}>
           <Banner kind="info" message={t('luaModulesCapabilityRequired') as string} />
         </Show>
         <div class="flex flex-wrap gap-2 items-center">
@@ -139,8 +146,27 @@ export const SkillsPage: Component<{ onRestartRequest: () => void }> = (props) =
       </div>
 
       <div class="p-5">
-        <Show when={appLuaModules().length === 0}>
+        <Show when={luaModulesError()}>
+          <Banner kind="error" message={luaModulesError() ?? undefined} />
+        </Show>
+        <Show
+          when={
+            !capabilitiesLoaded() ||
+            (capabilitySupported(appCapabilities(), 'cap_lua') &&
+              !luaModulesLoaded() &&
+              !luaModulesError())
+          }
+        >
           <Banner kind="info" message={t('luaModulesLoading') as string} />
+        </Show>
+        <Show
+          when={
+            capabilitySupported(appCapabilities(), 'cap_lua') &&
+            luaModulesLoaded() &&
+            appLuaModules().length === 0
+          }
+        >
+          <Banner kind="info" message={t('luaModulesEmpty') as string} />
         </Show>
         <Show when={appLuaModules().length > 0 && filtered().length === 0}>
           <Banner kind="info" message={t('luaModulesNoResult') as string} />
