@@ -108,6 +108,10 @@ or your router's client list. Configure your LLM provider and credentials in
 esp-claw settings, then describe the device in the web UI chat. Keep esp-claw
 tools and Lua modules enabled.
 
+For on-device voice input, open **Claw** and hold the microphone control while
+speaking, then release to send. Configure speech recognition in the web UI's
+ASR settings.
+
 Include the device type, name, GPIO numbers, and signal polarity. For example:
 
 > Add an on/off light called Desk lamp. Its relay uses GPIO4, output, active

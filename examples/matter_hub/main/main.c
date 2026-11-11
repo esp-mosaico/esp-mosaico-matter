@@ -33,6 +33,7 @@
 #include "wifi_manager.h"
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
 #if CONFIG_APP_MATTER_HUB_CLAW
+#include "app_asr.h"
 #include "cap_im_ai_create.h"
 #include "claw_event_router.h"
 #endif
@@ -49,7 +50,6 @@
 #include "wechat_binding_service.h"
 #include "cap_im_wechat.h"
 #endif
-#include "audio_hub.h"
 #endif
 #include "time.h"
 #include "nvs.h"
@@ -107,8 +107,8 @@ static EXT_RAM_BSS_ATTR app_settings_service_handle_t s_app_settings;
 static EXT_RAM_BSS_ATTR network_provisioning_service_handle_t s_network_provisioning;
 
 #if CONFIG_APP_MATTER_HUB_CLAW
-static EXT_RAM_BSS_ATTR asr_service_handle_t s_asr_service;
-static SemaphoreHandle_t s_asr_config_lock;
+static SemaphoreHandle_t s_config_lock;
+static bool s_asr_started;
 static EXT_RAM_BSS_ATTR app_claw_config_t *s_claw_config;
 #endif
 
@@ -196,110 +196,6 @@ static esp_err_t main_reset_xiaozhi_nvs(void)
     return ESP_OK;
 }
 #endif /* CONFIG_APP_MATTER_HUB_XIAOZHI */
-
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
-static bool main_asr_config_changed(
-    const app_config_t *before,
-    const app_config_t *after)
-{
-    return before == NULL || after == NULL ||
-           strcmp(before->asr_provider, after->asr_provider) != 0 ||
-           strcmp(before->asr_api_key, after->asr_api_key) != 0 ||
-           strcmp(before->asr_workspace_id, after->asr_workspace_id) != 0 ||
-           strcmp(before->asr_language_hint, after->asr_language_hint) != 0 ||
-           strcmp(before->asr_model, after->asr_model) != 0 ||
-           strcmp(before->asr_endpoint, after->asr_endpoint) != 0;
-}
-
-static esp_err_t main_set_asr_unavailable(
-    ai_create_voice_readiness_t readiness,
-    esp_err_t error)
-{
-    return mosaico_ui_set_ai_create_voice_status(
-        (ai_create_voice_status_t) {
-            .readiness = readiness,
-            .error = error,
-            .retryable = readiness == AI_CREATE_VOICE_READINESS_PROVIDER_ERROR,
-        });
-}
-
-static esp_err_t main_apply_asr_config(const app_config_t *config)
-{
-    ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG,
-                        "ASR config is NULL");
-    if (!s_asr_config_lock) {
-        s_asr_config_lock = xSemaphoreCreateMutex();
-        ESP_RETURN_ON_FALSE(s_asr_config_lock, ESP_ERR_NO_MEM, TAG,
-                            "Failed to create ASR config lock");
-    }
-
-    xSemaphoreTake(s_asr_config_lock, portMAX_DELAY);
-    asr_service_handle_t previous = s_asr_service;
-    asr_service_handle_t replacement = NULL;
-    audio_capture_handle_t capture = NULL;
-    esp_err_t err;
-    const bool trial_provider = config->asr_provider[0] &&
-                                strcmp(config->asr_provider, "trial") == 0;
-
-    if (!trial_provider && !config->asr_api_key[0]) {
-        err = main_set_asr_unavailable(
-            AI_CREATE_VOICE_READINESS_DISABLED, ESP_ERR_NOT_SUPPORTED);
-    } else if (config->asr_provider[0] &&
-               !trial_provider && strcmp(config->asr_provider, "qwen") != 0) {
-        err = main_set_asr_unavailable(
-            AI_CREATE_VOICE_READINESS_PROVIDER_ERROR,
-            ESP_ERR_NOT_SUPPORTED);
-    } else if (audio_hub_get_capture(&capture) != ESP_OK || capture == NULL) {
-        err = main_set_asr_unavailable(
-            AI_CREATE_VOICE_READINESS_AUDIO_ERROR,
-            ESP_ERR_INVALID_STATE);
-    } else {
-        err = asr_service_create(&(asr_service_config_t) {
-            .capture = capture,
-            .provider = trial_provider ? ASR_SERVICE_PROVIDER_TRIAL
-                                       : ASR_SERVICE_PROVIDER_QWEN,
-            .api_key = config->asr_api_key,
-            .workspace_id = config->asr_workspace_id[0]
-                                ? config->asr_workspace_id : NULL,
-            .endpoint = config->asr_endpoint[0]
-                            ? config->asr_endpoint
-                            : ASR_SERVICE_DEFAULT_ENDPOINT,
-            .model = config->asr_model[0]
-                         ? config->asr_model : ASR_SERVICE_DEFAULT_MODEL,
-            .language_hint = config->asr_language_hint[0]
-                                 ? config->asr_language_hint
-                                 : ASR_SERVICE_DEFAULT_LANGUAGE_HINT,
-            .connect_timeout_ms = 30000,
-            .send_timeout_ms = 3000,
-        }, &replacement);
-        if (err == ESP_OK) {
-            err = mosaico_ui_set_ai_create_asr(replacement);
-        } else {
-            ESP_LOGW(TAG, "ASR service unavailable: %s",
-                     esp_err_to_name(err));
-            esp_err_t status_err = main_set_asr_unavailable(
-                AI_CREATE_VOICE_READINESS_PROVIDER_ERROR, err);
-            err = status_err;
-        }
-    }
-
-    if (err == ESP_OK) {
-        s_asr_service = replacement;
-        replacement = NULL;
-    }
-    if (replacement) asr_service_delete(replacement);
-    if (err == ESP_OK && previous) asr_service_delete(previous);
-    xSemaphoreGive(s_asr_config_lock);
-
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "ASR runtime configuration applied: enabled=%d provider=%s",
-                 s_asr_service != NULL,
-                 config->asr_provider[0] ? config->asr_provider : "qwen");
-    }
-    return err;
-}
-
-#endif /* CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW */
 
 static esp_err_t app_allocate_runtime_state(void)
 {
@@ -460,33 +356,29 @@ static bool main_wifi_config_changed(
 
 static esp_err_t main_save_config(const app_config_t *config)
 {
-    esp_err_t err;
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
-    app_config_t *previous_config = NULL;
-    bool wifi_changed = true;
-#if CONFIG_APP_MATTER_HUB_CLAW
-    bool asr_changed = true;
-#endif
-#endif
-
     ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "config is NULL");
     ESP_RETURN_ON_ERROR(app_config_validate_wifi(config, NULL), TAG, "Invalid Wi-Fi config");
 
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
-    previous_config = calloc(1, sizeof(*previous_config));
-    if (previous_config != NULL &&
-            app_config_load(previous_config) == ESP_OK) {
-        wifi_changed = main_wifi_config_changed(
-                           previous_config, config);
-#if CONFIG_APP_MATTER_HUB_CLAW
-        asr_changed = main_asr_config_changed(
-                          previous_config, config);
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
 #endif
-    }
-    free(previous_config);
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    app_config_t *previous = calloc(1, sizeof(*previous));
+    const bool have_previous = previous && app_config_load(previous) == ESP_OK;
+    const bool wifi_changed = main_wifi_config_changed(have_previous ? previous : NULL, config);
 #endif
 
-    err = app_config_save(config);
+    esp_err_t err = app_config_save(config);
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#if CONFIG_APP_MATTER_HUB_CLAW
+    esp_err_t asr_err = ESP_OK;
+    if (err == ESP_OK && s_asr_started) {
+        asr_err = app_asr_reload(have_previous ? previous : NULL, config);
+    }
+    xSemaphoreGive(s_config_lock);
+#endif
+    free(previous);
+#endif
     if (err != ESP_OK) {
         return err;
     }
@@ -505,15 +397,7 @@ static esp_err_t main_save_config(const app_config_t *config)
     }
 #endif
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
-    audio_capture_handle_t capture = NULL;
-    if (asr_changed && audio_hub_get_capture(&capture) == ESP_OK && capture != NULL) {
-        err = main_apply_asr_config(config);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to apply saved ASR config: %s",
-                     esp_err_to_name(err));
-            return err;
-        }
-    }
+    ESP_RETURN_ON_ERROR(asr_err, TAG, "Failed to apply saved ASR config");
 #endif
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     if (wifi_changed && s_network_provisioning != NULL) {
@@ -562,14 +446,19 @@ static esp_err_t main_save_claw_config(const app_claw_config_t *config, void *us
     app_config = calloc(1, sizeof(*app_config));
     ESP_RETURN_ON_FALSE(app_config, ESP_ERR_NO_MEM, TAG, "Failed to allocate app config for Claw save");
 
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+#endif
     err = app_config_load(app_config);
-    if (err != ESP_OK) {
+    if (err == ESP_OK) {
+        main_copy_claw_to_app_config(config, app_config);
+        err = app_config_save(app_config);
+    } else {
         ESP_LOGE(TAG, "Failed to load config for Claw save: %s", esp_err_to_name(err));
-        free(app_config);
-        return err;
     }
-    main_copy_claw_to_app_config(config, app_config);
-    err = app_config_save(app_config);
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    xSemaphoreGive(s_config_lock);
+#endif
     free(app_config);
     return err;
 }
@@ -1034,6 +923,10 @@ void app_main(void)
     ESP_ERROR_CHECK(app_settings_service_create(&s_app_settings));
 
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#if CONFIG_APP_MATTER_HUB_CLAW
+    s_config_lock = xSemaphoreCreateMutex();
+    if (!s_config_lock) ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+#endif
     ESP_ERROR_CHECK(weather_service_init(&(weather_service_config_t) {
         .user_agent = APP_WEATHER_USER_AGENT,
         .refresh_interval_ms = 60U * 60U * 1000U,
@@ -1323,6 +1216,11 @@ void app_main(void)
         }
     }
 #elif CONFIG_APP_MATTER_HUB_CLAW
+#if CONFIG_ESP_BOARD_ESP_MOSAICO && CONFIG_ESP_BOARD_DEV_AUDIO_CODEC_SUPPORT
+    /* The board defers codec initialization until the audio services start. */
+    ESP_ERROR_CHECK(esp_board_manager_init_device_by_name(ESP_BOARD_DEVICE_NAME_AUDIO_DAC));
+    ESP_ERROR_CHECK(esp_board_manager_init_device_by_name(ESP_BOARD_DEVICE_NAME_AUDIO_ADC));
+#endif
     ESP_ERROR_CHECK(app_claw_start(s_claw_config));
 #endif
 #if !CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
@@ -1336,7 +1234,13 @@ void app_main(void)
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     ESP_ERROR_CHECK(weather_service_start());
 #if CONFIG_APP_MATTER_HUB_CLAW
-    ESP_ERROR_CHECK(main_apply_asr_config(s_config));
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    esp_err_t asr_err = app_asr_reload(NULL, s_config);
+    s_asr_started = true;
+    xSemaphoreGive(s_config_lock);
+    if (asr_err != ESP_OK) {
+        ESP_LOGW(TAG, "ASR startup failed: %s", esp_err_to_name(asr_err));
+    }
 #endif
 #endif
     esp_err_t restore_err = app_settings_service_restore_audio(s_app_settings);

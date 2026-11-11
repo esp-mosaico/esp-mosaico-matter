@@ -8,6 +8,7 @@ idf_component_register(SRCS "main.cpp" "bridge_battery.c" "router_config.c" "rou
 # top-level CMakeLists adds these components; attach their
 # include paths and link dependencies here, after configuration is loaded.
 if(CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE)
+    target_sources(${COMPONENT_LIB} PRIVATE "../../common/app_asr.c")
     idf_component_optional_requires(PRIVATE
         mosaico_hotplug_bridge mosaico_matter_camera mosaico_ui)
 endif()
