@@ -18,11 +18,13 @@ dependencies:
     path: ../../../components/claw_matter_controller
 
   app_claw:
+    rules:
+    - if: $CONFIG{APP_MATTER_HUB_CLAW} == True
     path: ../../../third_party/esp-mosaico-claw/components/app_claw
 
   cap_im_ai_create:
     rules:
-    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    - if: $CONFIG{APP_MATTER_HUB_CLAW} == True && $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
     path: ../../../third_party/esp-mosaico-claw/components/cap_im_ai_create
 
   audio_hub:
@@ -30,7 +32,7 @@ dependencies:
 
   asr_service:
     rules:
-    - if: $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
+    - if: $CONFIG{APP_MATTER_HUB_CLAW} == True && $CONFIG{APP_CLAW_MOSAIC_GSP_ENABLE} == True
     path: ../../../third_party/esp-mosaico-claw/components/asr_service
 
   app_config:
@@ -43,6 +45,8 @@ dependencies:
     path: ../../../third_party/esp-mosaico-claw/components/cap_system
 
   cap_im_platform:
+    rules:
+    - if: $CONFIG{APP_MATTER_HUB_CLAW} == True
     path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_capabilities/cap_im_platform
 
   captive_dns:
@@ -55,6 +59,8 @@ dependencies:
     version: "^1.22.0"
 
   claw_utils:
+    rules:
+    - if: $CONFIG{APP_MATTER_HUB_CLAW} == True
     path: ../../../third_party/esp-mosaico-claw/third-party/esp-claw/components/claw_modules/claw_utils
 
   mosaico_ui:

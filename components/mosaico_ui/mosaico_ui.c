@@ -28,7 +28,9 @@
 #include "mosaic_settings.h"
 #include "mosaic_system.h"
 #include "mosaic_system_flow.h"
+#if MOSAICO_UI_WITH_CLAW
 #include "mosaic_ai_create_runtime.h"
+#endif
 
 static const char *TAG = "mosaico_ui";
 
@@ -279,6 +281,7 @@ static void on_camera_availability(char slot, bool available, void *user_ctx)
         slot == 'R' ? 'R' : 'L', "Camera", "Photo / Video", "camera");
 }
 
+#if MOSAICO_UI_WITH_CLAW
 esp_err_t mosaico_ui_set_ai_create_asr(asr_service_handle_t asr)
 {
     return mosaic_ai_create_runtime_set_asr(asr);
@@ -288,6 +291,7 @@ esp_err_t mosaico_ui_set_ai_create_voice_status(ai_create_voice_status_t status)
 {
     return mosaic_ai_create_runtime_set_voice_status(status);
 }
+#endif /* MOSAICO_UI_WITH_CLAW */
 
 esp_err_t mosaic_welcome_open(void)
 {
@@ -306,12 +310,16 @@ esp_err_t mosaico_ui_back(void)
 
 esp_err_t mosaico_ui_open_ai_create(void)
 {
+#if MOSAICO_UI_WITH_CLAW
     const mosaic_app_descriptor_t *app =
         mosaic_app_descriptor_for_name("ai_create");
     if (app == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
     return mosaic_loader_request(app);
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
 static esp_err_t present_quiesce(void *ctx, uint32_t timeout_ms)
@@ -416,8 +424,10 @@ esp_err_t mosaico_ui_start(void)
         s_system_flow_ready = true;
     }
 
+#if MOSAICO_UI_WITH_CLAW
     ESP_RETURN_ON_ERROR(mosaic_ai_create_runtime_init(), TAG,
                         "init AI Create runtime failed");
+#endif
 
     esp_display_presenter_t *presenter = NULL;
     esp_lcd_touch_handle_t touch = NULL;

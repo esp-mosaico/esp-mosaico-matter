@@ -3,8 +3,17 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include "sdkconfig.h"
+
+#if CONFIG_APP_MATTER_HUB_CLAW
 #include "app_claw.h"
+#endif
+
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+#include "audio_hub.h"
+#elif CONFIG_APP_MATTER_HUB_CLAW
 #include "app_capabilities.h"
+#endif
 #include "camera_buffer_pool.h"
 #include "app_settings_service.h"
 #include "display_service.h"
@@ -23,8 +32,10 @@
 #include <stdio.h>
 #include "wifi_manager.h"
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#if CONFIG_APP_MATTER_HUB_CLAW
 #include "cap_im_ai_create.h"
 #include "claw_event_router.h"
+#endif
 #include "claw_hw_registry.h"
 #include "mosaic_setup.h"
 #include "mosaic_matter.h"
@@ -34,7 +45,10 @@
 #include "weather_service.h"
 #include "update_check_service.h"
 #include "network_provisioning_service.h"
+#if CONFIG_APP_MATTER_HUB_CLAW && CONFIG_APP_CLAW_CAP_IM_WECHAT
 #include "wechat_binding_service.h"
+#include "cap_im_wechat.h"
+#endif
 #include "audio_hub.h"
 #endif
 #include "time.h"
@@ -46,6 +60,9 @@
 #include "http_server_claw.h"
 #endif
 #include "http_server_matter.h"
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+#include "http_server_xiaozhi.h"
+#endif
 #if CONFIG_ESP_BOARD_ESP_MOSAICO
 #include "mosaico_camera_service.h"
 #endif
@@ -63,10 +80,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
-#if CONFIG_APP_CLAW_CAP_IM_WECHAT
-#include "cap_im_wechat.h"
-#endif
 #include "app_config.h"
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+#include "xiaozhi_voice.h"
+#endif
 #include "trial_auth.h"
 #include "cap_system_platform.h"
 #if CONFIG_ESP_BOARD_ESP_MOSAICO
@@ -85,14 +102,18 @@
 static const char *TAG = "app";
 
 static EXT_RAM_BSS_ATTR app_config_t *s_config;
-static EXT_RAM_BSS_ATTR app_claw_config_t *s_claw_config;
 static EXT_RAM_BSS_ATTR app_settings_service_handle_t s_app_settings;
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
 static EXT_RAM_BSS_ATTR network_provisioning_service_handle_t s_network_provisioning;
-static EXT_RAM_BSS_ATTR wechat_binding_service_handle_t s_wechat_binding;
+
+#if CONFIG_APP_MATTER_HUB_CLAW
 static EXT_RAM_BSS_ATTR asr_service_handle_t s_asr_service;
 static SemaphoreHandle_t s_asr_config_lock;
+static EXT_RAM_BSS_ATTR app_claw_config_t *s_claw_config;
+#endif
 
+#if CONFIG_APP_MATTER_HUB_CLAW && CONFIG_APP_CLAW_CAP_IM_WECHAT
+static EXT_RAM_BSS_ATTR wechat_binding_service_handle_t s_wechat_binding;
 /* Keep the Setup Center model enum locked to the binding service contract. */
 #define ASSERT_WECHAT_STATE_MATCH(name)                                      \
     _Static_assert((int)WECHAT_BINDING_STATE_##name ==                       \
@@ -108,7 +129,9 @@ ASSERT_WECHAT_STATE_MATCH(CANCELLED);
 ASSERT_WECHAT_STATE_MATCH(EXPIRED);
 ASSERT_WECHAT_STATE_MATCH(ERROR);
 #undef ASSERT_WECHAT_STATE_MATCH
+#endif
 
+#if CONFIG_APP_MATTER_HUB_CLAW
 static esp_err_t main_register_ai_create_capability(
     const app_claw_config_t *config,
     const app_claw_storage_paths_t *paths)
@@ -120,6 +143,7 @@ static esp_err_t main_register_ai_create_capability(
     return claw_event_router_register_outbound_binding(
         CAP_IM_AI_CREATE_CHANNEL, "ai_create_send_message");
 }
+#endif
 
 #endif /* CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE */
 
@@ -148,7 +172,32 @@ static esp_err_t main_reset_matter_nvs(void)
 }
 #endif /* CONFIG_ESP_MATTER_CONTROLLER_ENABLE */
 
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+static esp_err_t main_reset_xiaozhi_nvs(void)
+{
+    // esp_xiaozhi uses these namespaces for MQTT and WebSocket configuration
+    static const char *const namespaces[] = {
+        "board", "mqtt", "websocket",
+    };
+    for (size_t i = 0; i < sizeof(namespaces) / sizeof(namespaces[0]); ++i) {
+        nvs_handle_t handle = 0;
+        esp_err_t err = nvs_open(namespaces[i], NVS_READWRITE, &handle);
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            continue;
+        }
+        ESP_RETURN_ON_ERROR(err, TAG, "open XiaoZhi NVS namespace");
+        err = nvs_erase_all(handle);
+        if (err == ESP_OK) {
+            err = nvs_commit(handle);
+        }
+        nvs_close(handle);
+        ESP_RETURN_ON_ERROR(err, TAG, "erase XiaoZhi NVS namespace");
+    }
+    return ESP_OK;
+}
+#endif /* CONFIG_APP_MATTER_HUB_XIAOZHI */
+
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
 static bool main_asr_config_changed(
     const app_config_t *before,
     const app_config_t *after)
@@ -250,27 +299,34 @@ static esp_err_t main_apply_asr_config(const app_config_t *config)
     return err;
 }
 
-#endif
+#endif /* CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW */
 
 static esp_err_t app_allocate_runtime_state(void)
 {
     if (!s_config) {
         s_config = calloc(1, sizeof(*s_config));
     }
+
+    ESP_RETURN_ON_FALSE(s_config, ESP_ERR_NO_MEM, TAG,
+                        "Failed to allocate runtime state");
+
+#if CONFIG_APP_MATTER_HUB_CLAW
     if (!s_claw_config) {
         s_claw_config = calloc(1, sizeof(*s_claw_config));
     }
-
-    ESP_RETURN_ON_FALSE(s_config && s_claw_config, ESP_ERR_NO_MEM, TAG,
-                        "Failed to allocate runtime state");
+    ESP_RETURN_ON_FALSE(s_claw_config, ESP_ERR_NO_MEM, TAG,
+                        "Failed to allocate Claw config");
+#endif
 
     return ESP_OK;
 }
 
 static void app_free_runtime_state(void)
 {
+#if CONFIG_APP_MATTER_HUB_CLAW
     free(s_claw_config);
     s_claw_config = NULL;
+#endif
 
     free(s_config);
     s_config = NULL;
@@ -290,6 +346,7 @@ static void log_wifi_startup_config(const app_config_t *config)
              config->ap_behavior[0] ? config->ap_behavior : "keep");
 }
 
+#if CONFIG_APP_MATTER_HUB_CLAW
 static bool main_network_ready(void *user_ctx)
 {
     wifi_manager_status_t status = {0};
@@ -298,6 +355,7 @@ static bool main_network_ready(void *user_ctx)
     wifi_manager_get_status(&status);
     return status.sta_connected;
 }
+#endif
 
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
 static void on_network_provisioning_changed(
@@ -318,6 +376,7 @@ static void on_network_provisioning_changed(
     mosaic_settings_platform_notify_network_changed();
 }
 
+#if CONFIG_APP_MATTER_HUB_CLAW && CONFIG_APP_CLAW_CAP_IM_WECHAT
 static void on_device_setup_wechat(
     wechat_binding_service_handle_t service,
     const wechat_binding_status_t *status,
@@ -356,6 +415,7 @@ static esp_err_t device_setup_cancel_wechat(void *user_ctx)
     (void)user_ctx;
     return wechat_binding_service_cancel(s_wechat_binding);
 }
+#endif
 
 #else
 static void on_wifi_state_changed(bool connected, void *user_ctx)
@@ -401,11 +461,12 @@ static bool main_wifi_config_changed(
 static esp_err_t main_save_config(const app_config_t *config)
 {
     esp_err_t err;
-    app_claw_config_t *claw_config = NULL;
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     app_config_t *previous_config = NULL;
     bool wifi_changed = true;
+#if CONFIG_APP_MATTER_HUB_CLAW
     bool asr_changed = true;
+#endif
 #endif
 
     ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "config is NULL");
@@ -417,8 +478,10 @@ static esp_err_t main_save_config(const app_config_t *config)
             app_config_load(previous_config) == ESP_OK) {
         wifi_changed = main_wifi_config_changed(
                            previous_config, config);
+#if CONFIG_APP_MATTER_HUB_CLAW
         asr_changed = main_asr_config_changed(
                           previous_config, config);
+#endif
     }
     free(previous_config);
 #endif
@@ -428,7 +491,8 @@ static esp_err_t main_save_config(const app_config_t *config)
         return err;
     }
 
-    claw_config = calloc(1, sizeof(*claw_config));
+#if CONFIG_APP_MATTER_HUB_CLAW
+    app_claw_config_t *claw_config = calloc(1, sizeof(*claw_config));
     if (!claw_config) {
         ESP_LOGW(TAG, "Failed to allocate Claw config for runtime update");
         return ESP_OK;
@@ -439,7 +503,8 @@ static esp_err_t main_save_config(const app_config_t *config)
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "Failed to update running Claw config: %s", esp_err_to_name(err));
     }
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#endif
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
     audio_capture_handle_t capture = NULL;
     if (asr_changed && audio_hub_get_capture(&capture) == ESP_OK && capture != NULL) {
         err = main_apply_asr_config(config);
@@ -449,6 +514,8 @@ static esp_err_t main_save_config(const app_config_t *config)
             return err;
         }
     }
+#endif
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     if (wifi_changed && s_network_provisioning != NULL) {
         err = network_provisioning_service_reload_and_apply(
                   s_network_provisioning);
@@ -462,6 +529,7 @@ static esp_err_t main_save_config(const app_config_t *config)
     return ESP_OK;
 }
 
+#if CONFIG_APP_MATTER_HUB_CLAW
 static void main_copy_claw_to_app_config(const app_claw_config_t *src, app_config_t *dst)
 {
     strlcpy(dst->llm_api_key, src->llm_api_key, sizeof(dst->llm_api_key));
@@ -505,6 +573,7 @@ static esp_err_t main_save_claw_config(const app_claw_config_t *config, void *us
     free(app_config);
     return err;
 }
+#endif /* CONFIG_APP_MATTER_HUB_CLAW */
 
 static esp_err_t main_get_wifi_status(http_server_wifi_status_t *status)
 {
@@ -521,6 +590,32 @@ static esp_err_t main_get_wifi_status(http_server_wifi_status_t *status)
     return ESP_OK;
 }
 
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+static esp_err_t main_get_xiaozhi_status(http_server_xiaozhi_status_t *status)
+{
+    ESP_RETURN_ON_FALSE(status, ESP_ERR_INVALID_ARG, TAG, "status is NULL");
+
+    xiaozhi_voice_status_t *voice = calloc(1, sizeof(*voice));
+    ESP_RETURN_ON_FALSE(voice, ESP_ERR_NO_MEM, TAG, "Failed to allocate XiaoZhi status");
+
+    esp_err_t err = xiaozhi_voice_get_status(voice);
+    if (err == ESP_OK) {
+        memset(status, 0, sizeof(*status));
+        status->started = voice->started;
+        status->wifi_connected = voice->wifi_connected;
+        status->server_connected = voice->server_connected;
+        status->activating = voice->activating;
+        strlcpy(status->state, voice->state, sizeof(status->state));
+        strlcpy(status->transport, voice->transport, sizeof(status->transport));
+        strlcpy(status->activation_code, voice->activation_code, sizeof(status->activation_code));
+        strlcpy(status->activation_message, voice->activation_message, sizeof(status->activation_message));
+        strlcpy(status->last_error, voice->last_error, sizeof(status->last_error));
+    }
+    free(voice);
+    return err;
+}
+#endif
+
 static void main_restart_task(void *arg)
 {
     (void)arg;
@@ -535,7 +630,7 @@ static esp_err_t main_restart_device(void)
     return ESP_OK;
 }
 
-#if CONFIG_APP_CLAW_CAP_IM_WECHAT
+#if CONFIG_APP_CLAW_CAP_IM_WECHAT && CONFIG_APP_MATTER_HUB_CLAW
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
 static esp_err_t main_wechat_binding_persist(
     const wechat_binding_credentials_t *credentials,
@@ -811,7 +906,7 @@ void print_memory_info(const char *tag)
 static void memory_monitor_task(void *arg)
 {
     (void)arg;
-    #define PERF_REPORT_INTERVAL_MS 5000
+    #define PERF_REPORT_INTERVAL_MS 30000
 
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(PERF_REPORT_INTERVAL_MS));
@@ -872,9 +967,11 @@ void app_main(void)
     esp_log_level_set("http_reuse", ESP_LOG_WARN);
 
     ESP_LOGI(TAG, "Starting app");
+#if CONFIG_APP_MATTER_HUB_CLAW
     ESP_LOGI(TAG, "ESP-Claw version: %s", claw_get_version());
     ESP_LOGI(TAG, "ESP-Claw git version: %s", claw_get_git_version());
     ESP_LOGI(TAG, "Edge Agent version: %s", edge_agent_get_version());
+#endif
     ESP_ERROR_CHECK(app_allocate_runtime_state());
     ESP_ERROR_CHECK(init_nvs());
     ESP_ERROR_CHECK(app_config_init());
@@ -886,7 +983,9 @@ void app_main(void)
         ESP_ERROR_CHECK(app_config_reset_all());
     }
     ESP_ERROR_CHECK(app_config_load(s_config));
+#if CONFIG_APP_MATTER_HUB_CLAW
     app_config_to_claw(s_config, s_claw_config);
+#endif
     init_timezone(app_config_get_timezone(s_config)); // no need to check error
 #if CONFIG_ESP_BOARD_ESP_MOSAICO
     ESP_ERROR_CHECK(mosaico_bsp_bmgr_init());
@@ -910,6 +1009,9 @@ void app_main(void)
         ESP_ERROR_CHECK(app_fs_factory_reset());
 #if CONFIG_ESP_MATTER_CONTROLLER_ENABLE
         ESP_ERROR_CHECK(main_reset_matter_nvs());
+#endif
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+        ESP_ERROR_CHECK(main_reset_xiaozhi_nvs());
 #endif
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
         ESP_ERROR_CHECK(weather_service_erase_cache());
@@ -953,6 +1055,7 @@ void app_main(void)
             s_network_provisioning,
             on_network_provisioning_changed,
             NULL));
+#if CONFIG_APP_MATTER_HUB_CLAW && CONFIG_APP_CLAW_CAP_IM_WECHAT
         ESP_ERROR_CHECK(wechat_binding_service_create(
             &(wechat_binding_service_config_t) {
                 .persist = main_wechat_binding_persist,
@@ -975,6 +1078,7 @@ void app_main(void)
         ESP_ERROR_CHECK(wechat_binding_service_get_status(
             s_wechat_binding, &setup_wechat));
         on_device_setup_wechat(s_wechat_binding, &setup_wechat, NULL);
+#endif
     }
     ESP_ERROR_CHECK(mosaic_settings_platform_init(
         &(mosaic_settings_platform_config_t) {
@@ -1027,14 +1131,14 @@ void app_main(void)
         .load = main_load_config,
         .save = main_save_config,
         .ap_config_supported = true,
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
         .asr_supported = true,
 #endif
     });
     http_server_extension_t http_extension = {0};
 #if CONFIG_HTTP_SERVER_CLAW_ENABLE
     http_extension = http_server_claw_init(&(http_server_claw_services_t) {
-#if CONFIG_APP_CLAW_CAP_IM_WECHAT
+#if CONFIG_APP_CLAW_CAP_IM_WECHAT && CONFIG_APP_MATTER_HUB_CLAW
             .wechat_login_start = main_wechat_login_start,
             .wechat_login_get_status = main_wechat_login_get_status,
             .wechat_login_cancel = main_wechat_login_cancel,
@@ -1057,10 +1161,13 @@ void app_main(void)
         .claw_enabled = true,
 #endif
         .ap_config_supported = true,
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
         .asr_supported = true,
 #endif
     }));
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+    ESP_ERROR_CHECK(http_server_xiaozhi_set_status_cb(main_get_xiaozhi_status));
+#endif
 #if !CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     ESP_ERROR_CHECK(wifi_manager_register_state_callback(on_wifi_state_changed, NULL));
 #endif
@@ -1165,7 +1272,7 @@ void app_main(void)
 #endif
 #endif /* CONFIG_ESP_MATTER_CONTROLLER_ENABLE */
 
-#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE && CONFIG_APP_MATTER_HUB_CLAW
     ESP_ERROR_CHECK(app_capabilities_register_external_group(
         &(app_capability_external_group_t) {
             .group_id = "cap_im_ai_create",
@@ -1175,9 +1282,49 @@ void app_main(void)
         }));
 #endif
     ESP_ERROR_CHECK(app_cap_system_platform_init(s_app_settings));
+#if CONFIG_APP_MATTER_HUB_CLAW
     ESP_ERROR_CHECK(app_claw_set_save_config_callback(main_save_claw_config, NULL));
     ESP_ERROR_CHECK(app_claw_set_network_ready_callback(main_network_ready, NULL));
+#endif
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+#if CONFIG_ESP_BOARD_ESP_MOSAICO && CONFIG_ESP_BOARD_DEV_AUDIO_CODEC_SUPPORT
+    // audio_dac/audio_adc are init_skip in the board YAML.
+    esp_err_t audio_dac_err = esp_board_manager_init_device_by_name(ESP_BOARD_DEVICE_NAME_AUDIO_DAC);
+    if (audio_dac_err != ESP_OK) {
+        ESP_LOGE(TAG, "audio_dac init failed: %s", esp_err_to_name(audio_dac_err));
+    }
+    esp_err_t audio_adc_err = esp_board_manager_init_device_by_name(ESP_BOARD_DEVICE_NAME_AUDIO_ADC);
+    if (audio_adc_err != ESP_OK) {
+        ESP_LOGE(TAG, "audio_adc init failed: %s", esp_err_to_name(audio_adc_err));
+    }
+#endif
+    {
+        const audio_hub_config_t audio_config = {
+            .mixer = {
+                .sample_rate = 16000, .channels = 1, .bits = 16, .frame_ms = 20,
+                .system_full_gain = 1.0f, .app_full_gain = 1.0f, .app_ducked_gain = 0.3f,
+                .duck_release_ms = 300, .output_volume = 80,
+            },
+            .capture = {
+                .sample_rate = 16000, .channels = 1, .bits = 16, .frame_ms = 20,
+                .ring_frames = 8,
+            },
+        };
+        /* audio_mixer.c AUDIO_MIXER_RING_FRAMES. */
+        const uint32_t mixer_ring_frames = 8;
+        esp_err_t timing_err = xiaozhi_voice_set_mixer_timing(audio_config.mixer.frame_ms,
+                                                             mixer_ring_frames);
+        if (timing_err != ESP_OK) {
+            ESP_LOGW(TAG, "XiaoZhi mixer timing was not set: %s", esp_err_to_name(timing_err));
+        }
+        esp_err_t audio_err = audio_hub_start(&audio_config);
+        if (audio_err != ESP_OK) {
+            ESP_LOGW(TAG, "audio_hub_start skipped: %s", esp_err_to_name(audio_err));
+        }
+    }
+#elif CONFIG_APP_MATTER_HUB_CLAW
     ESP_ERROR_CHECK(app_claw_start(s_claw_config));
+#endif
 #if !CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     esp_err_t display_err = app_status_display_start();
     if (display_err != ESP_OK) {
@@ -1188,7 +1335,9 @@ void app_main(void)
 #endif
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
     ESP_ERROR_CHECK(weather_service_start());
+#if CONFIG_APP_MATTER_HUB_CLAW
     ESP_ERROR_CHECK(main_apply_asr_config(s_config));
+#endif
 #endif
     esp_err_t restore_err = app_settings_service_restore_audio(s_app_settings);
     if (restore_err != ESP_OK) {
@@ -1244,10 +1393,27 @@ void app_main(void)
     }
 #endif
 
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+    {
+        void *matter_manager = NULL;
+#if CONFIG_ESP_MATTER_CONTROLLER_ENABLE
+        matter_manager = app_local_fabric_manager();
+#endif
+        esp_err_t xiaozhi_err = xiaozhi_voice_start(matter_manager);
+        if (xiaozhi_err != ESP_OK) {
+            ESP_LOGW(TAG, "XiaoZhi voice did not start: %s",
+                     esp_err_to_name(xiaozhi_err));
+        }
+    }
+#endif
+
     register_wifi_command();
+#if CONFIG_APP_MATTER_HUB_XIAOZHI
+    xiaozhi_voice_register_console();
+#endif
 
 #if APP_ENABLE_MEM_LOG
-    xTaskCreate(memory_monitor_task, "mem_mon", 4096, NULL, 1, NULL);
+    xTaskCreateWithCaps(memory_monitor_task, "mem_mon", 4096, NULL, 1, NULL, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #endif
 
     app_free_runtime_state();

@@ -34,6 +34,7 @@ export function routeAvailable(
 ): boolean {
   if (BASE_ROUTES.has(route)) return true;
   if (route === 'matter') return status?.matter_enabled === true;
+  if (route === 'xiaozhi') return status?.xiaozhi_enabled === true;
   if (status?.claw_enabled !== true) return false;
   if (route === 'webim') return status.webim_supported === true;
   if (route === 'asr') return status.asr_supported === true;

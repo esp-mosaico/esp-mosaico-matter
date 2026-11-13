@@ -14,8 +14,12 @@ From `examples/matter_hub/`, select the board and build:
 
 ```sh
 idf.py bmgr -c "boards;../../third_party/esp-mosaico-claw/boards" -b esp_mosaico
+idf.py menuconfig
 idf.py build
 ```
+
+`idf.py menuconfig` → **App Config → Matter hub agent** selects
+`matter_hub_no_agent`, `matter_hub_claw` (default), or `matter_hub_xiaozhi`.
 
 Board Manager auto-discovers the overlay by its directory name and applies
 `sdkconfig.defaults.board` on top of the upstream board defaults. No `-a` flag

@@ -98,10 +98,12 @@ static void* bounded_alloc(
             > logic->memory_limit - (logic->memory_used - previous_size)) {
         return NULL;
     }
-    allocation = realloc(allocation, sizeof(*allocation) + new_size);
-    if (allocation == NULL) {
+    mosaic_lua_allocation_t* resized
+        = realloc(allocation, sizeof(*allocation) + new_size);
+    if (resized == NULL) {
         return NULL;
     }
+    allocation = resized;
     allocation->size = new_size;
     logic->memory_used = logic->memory_used - previous_size + new_size;
     return allocation + 1;

@@ -57,6 +57,9 @@ const SetupWizardPage = lazy(() =>
 const MatterBridgePage = lazy(() =>
   import('./pages/MatterBridgePage').then((mod) => ({ default: mod.MatterBridgePage })),
 );
+const XiaozhiPage = lazy(() =>
+  import('./pages/XiaozhiPage').then((mod) => ({ default: mod.XiaozhiPage })),
+);
 
 type RouteId = TabId | 'start';
 type RestartRequestOptions = {
@@ -293,6 +296,9 @@ const App: Component = () => {
               </Show>
               <Show when={currentTab() === 'webim'}>
                 <WebImPage />
+              </Show>
+              <Show when={currentTab() === 'xiaozhi'}>
+                <XiaozhiPage />
               </Show>
               <Show when={currentTab() === 'matter'}>
                 <Show when={appStatus()?.matter_role === 'bridge'} fallback={<MatterPage />}>

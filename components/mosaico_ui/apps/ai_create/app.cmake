@@ -1,5 +1,6 @@
 set(MOSAIC_APP_NAME ai_create)
 set(MOSAIC_APP_MODULE_SOURCE ai_create_app.c)
+set(MOSAIC_APP_EXTRA_SOURCES ai_create_presenter.c)
 set(MOSAIC_APP_MODULE_SYMBOL mosaic_ai_create_app)
 set(MOSAIC_APP_BUNDLE generated/ai_create.gspb)
 set(MOSAIC_APP_SCENE_DIR scene)

@@ -164,6 +164,7 @@ export type StatusInfo = {
   matter_enabled?: boolean;
   matter_role?: 'controller' | 'bridge' | 'none';
   claw_enabled?: boolean;
+  xiaozhi_enabled?: boolean;
   webim_supported?: boolean;
   wechat_login_supported?: boolean;
   memory_supported?: boolean;
@@ -248,8 +249,28 @@ async function request<T>(
   return (await response.text()) as unknown as T;
 }
 
+export type XiaozhiStatusInfo = {
+  started: boolean;
+  wifi_connected: boolean;
+  server_connected: boolean;
+  activating: boolean;
+  state: string;
+  transport: string;
+  activation_code: string;
+  activation_message: string;
+  last_error: string;
+};
+
 export function fetchStatus(signal?: AbortSignal) {
   return request<StatusInfo>('/api/status', { signal }, 'Failed to load status');
+}
+
+export function fetchXiaozhiStatus(signal?: AbortSignal) {
+  return request<XiaozhiStatusInfo>(
+    '/api/xiaozhi/status',
+    { signal },
+    'Failed to load XiaoZhi status',
+  );
 }
 
 /** Fetch a subset of the configuration, filtered by group names. */

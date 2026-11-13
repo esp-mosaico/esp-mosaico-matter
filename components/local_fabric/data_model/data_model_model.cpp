@@ -105,9 +105,9 @@ esp_err_t allocate(data_model::device_set &set, size_t device_count,
         static_cast<data_model::device *>(calloc(device_count, sizeof(data_model::device)));
     set.endpoints = static_cast<data_model::endpoint *>(
         calloc(endpoint_count, sizeof(data_model::endpoint)));
-    set.clusters = cluster_count
-                       ? new (std::nothrow) data_model::cluster[cluster_count]{}
-                       : nullptr;
+    if (cluster_count) {
+        set.clusters = new (std::nothrow) data_model::cluster[cluster_count]{};
+    }
     if ((device_count && !set.devices) || (endpoint_count && !set.endpoints) ||
         (cluster_count && !set.clusters)) {
         data_model::model::free(&set);

@@ -1009,10 +1009,9 @@ static void stream_open(void)
             s_frames[i] = heap_caps_malloc(
                 MOSAIC_CAMERA_FRAME_BYTES,
                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+            s_frames[i] = malloc(MOSAIC_CAMERA_FRAME_BYTES);
 #endif
-            if (s_frames[i] == NULL) {
-                s_frames[i] = malloc(MOSAIC_CAMERA_FRAME_BYTES);
-            }
         }
         s_busy[i] = false;
     }

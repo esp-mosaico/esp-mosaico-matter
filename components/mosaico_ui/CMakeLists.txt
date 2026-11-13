@@ -33,7 +33,6 @@ idf_component_register(
          "common/mosaic_ai_create_runtime.c"
          "common/mosaic_qr_canvas.c"
          "common/qrcodegen/qrcodegen.c"
-         "apps/ai_create/ai_create_presenter.c"
          ${MOSAIC_APP_MODULE_SOURCES}
     INCLUDE_DIRS "."
                  "include"
@@ -111,6 +110,13 @@ endif()
 gsp_enable_freetype()
 
 if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    if("ai_create" IN_LIST MOSAIC_APP_BUNDLE_NAMES)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE MOSAICO_UI_WITH_CLAW=1)
+    endif()
+    if("xiaozhi" IN_LIST MOSAIC_APP_BUNDLE_NAMES)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE MOSAICO_UI_WITH_XIAOZHI=1)
+    endif()
+
     include("${MOSAIC_MAIN_DIR}/common/mosaic_scene_build.cmake")
     mosaic_setup_bundle_generation(
         "${MOSAIC_MAIN_DIR}"
@@ -162,6 +168,17 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
 
     add_custom_target(mosaico_ui_stage_assets DEPENDS ${UI_STAGED_FILES})
     add_dependencies(${COMPONENT_LIB} mosaico_ui_stage_assets)
+
+    # spiffs_create_partition_assets uses file(GLOB_RECURSE ... CONFIGURE_DEPENDS)
+    # on UI_ASSETS_DIR at configure time. Keep its directory listing matched to
+    # UI_STAGED_FILES upfront to prevent packing stale bundles.
+    file(MAKE_DIRECTORY "${UI_ASSETS_DIR}")
+    file(GLOB _existing_ui_assets "${UI_ASSETS_DIR}/*")
+    foreach(_existing_asset IN LISTS _existing_ui_assets)
+        if(NOT _existing_asset IN_LIST UI_STAGED_FILES)
+            file(REMOVE_RECURSE "${_existing_asset}")
+        endif()
+    endforeach()
 
     spiffs_create_partition_assets(
         ui_apps

@@ -2,14 +2,16 @@
 
 ## Overview
 
-Run a Matter hub on ESP-Mosaico with commissioning and control, esp-claw
-integration, web and on-device UIs, and Thread border router support.
+Run a Matter hub on ESP-Mosaico with commissioning and control, Web and
+on-device UIs, and Thread border router support. An onboard agent is
+optional—build with esp-claw or XiaoZhi for smart interaction, or with none for
+UIs only.
 
 Commission devices into a local Matter fabric by scanning their Matter QR
 codes with an ESP-Mosaico camera module, or enter setup codes manually. Then
-inspect and control them through either UI or natural-language requests to
-esp-claw. Use the web UI to rename devices, assign rooms, or remove devices
-from the fabric.
+inspect and control them from the Web UI or on-device **Matter** app, or
+through esp-claw or XiaoZhi when that agent is enabled. Use the Web UI to rename
+devices, assign rooms, or remove devices from the fabric.
 
 For Matter-over-Thread devices, attach a compatible ESP-Mosaico Thread-RCP
 accessory. Open **Thread Border Router** in the on-device UI, select **Start**
@@ -42,19 +44,24 @@ python -m pip install -r third_party/esp-mosaico-claw/requirements.txt
 cd examples/matter_hub
 
 idf.py bmgr -c "boards;../../third_party/esp-mosaico-claw/boards" -b esp_mosaico
+idf.py menuconfig
 idf.py build
 idf.py flash monitor
 ```
 
-Run Board Manager before the first build. If switching from another board,
-remove the old `sdkconfig` and `build/`, then repeat the commands. See the
+In menuconfig, open **App Config → Matter hub agent**. An onboard agent is
+optional—pick none (`matter_hub_no_agent`), esp-claw (`matter_hub_claw`,
+default), or XiaoZhi (`matter_hub_xiaozhi`).
+
+Run Board Manager before the first build. If switching from another board, remove the
+old `sdkconfig` and `build/`, then repeat the commands. See the
 [board configuration guide](boards/README.md) for details.
 
 ### 3. Connect to Wi-Fi
 
 On first boot, use the on-device setup to select your Wi-Fi network and enter
-its password. Finish or skip the remaining esp-claw setup steps to reach the
-launcher. You can change the network later in Settings.
+its password. Finish or skip the remaining setup steps to reach the launcher.
+You can change the network later in Settings.
 
 Find the hub's IP address in Settings, the serial monitor, or your router's
 client list. Connect your computer or phone to the same network.
@@ -73,7 +80,7 @@ Put the target device into commissioning mode, then use either interface:
   commissioner uses the scanned setup information to add the device to its
   local Matter fabric.
 - **Manual entry:** enter the manual setup code in the on-device **Matter**
-  app, or open `http://HUB_IP/#matter` in a browser. In the web UI, enter the
+  app, or open `http://HUB_IP/#matter` in a browser. In the Web UI, enter the
   manual setup code or full QR payload (`MT:...`) under **Commission a device**,
   then select **Commission**. Wait for the device to appear in the device list.
 
@@ -82,20 +89,29 @@ window from that controller and use its new sharing code.
 
 ### 5. View and control devices
 
-Open a device on the web UI's **Matter Fabric** page to inspect its state and
+Open a device on the Web UI's **Matter Fabric** page to inspect its state and
 use its supported controls. The on-device **Matter** app provides basic device
 control. Both UIs work without an LLM connection.
+Commission devices through the Web or on-device UI before controlling them.
 
-To control commissioned devices through chat, open `http://HUB_IP/`, configure
-your LLM provider and credentials in esp-claw settings, then ask the agent, for
-example:
+With `matter_hub_no_agent`, use the Web UI and the on-device UI only.
+
+With `matter_hub_claw`, open `http://HUB_IP/`, configure the LLM provider and
+credentials in esp-claw settings, then ask the agent, for example:
 
 > List my Matter devices.
 
-> Turn on the Desk lamp.
+> Turn on the desk lamp.
 
-Commission devices through the web or on-device UI before controlling them
-through esp-claw.
+With `matter_hub_xiaozhi`, open **XiaoZhi** from the on-device launcher, then say
+"Hi ESP" or use **Talk** icon. If the screen shows an activation code, enter it in
+the [XiaoZhi console](https://xiaozhi.me/console/agents) and wait until the hub
+leaves the activation screen before waking it. XiaoZhi can then list
+commissioned devices and invoke their actions, for example:
+
+> List my Matter devices.
+
+> Turn on the desk lamp.
 
 ## Muse Home Link skill
 

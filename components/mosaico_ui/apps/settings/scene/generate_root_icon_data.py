@@ -15,6 +15,7 @@ ICONS = {
     "ai": HERE / "settings_root_ai.png",
     "channels": HERE / "settings_root_channels.png",
     "network": HERE / "settings_root_network.png",
+    "web": HERE / "settings_root_web.png",
     "display": HERE / "settings_root_display.png",
     "sound": HERE / "settings_root_sound.png",
     "security": HERE / "settings_root_security.png",

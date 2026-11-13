@@ -2,6 +2,7 @@
 """Generate Welcome scenes from the canonical Python scene definitions."""
 
 import json
+import os
 import pathlib
 import sys
 
@@ -89,24 +90,37 @@ def scene_intro():
     ]
 
 
+def _show_claw_guide():
+    raw = os.environ.get("MOSAIC_HUB_AGENT")
+    if raw is None:
+        return True
+    return raw.strip() == "claw"
+
+
 def scene_keys():
     orange = "#FF4C01"
     white = "#FCFCFF"
-    return [
+    objs = [
         root(), image(-35, 65, 299, 316, "bodyLit.png"),
         {"type": "container", "parent": 0, "x": 295, "y": 65,
          "w": 12, "h": 12, "bg_color": orange, "radius": 6},
         label(331, 62, 145, 28, "Single-click", 18, orange),
         label(295, 88, 181, 36, "Sleep/Go back", 24, white),
-        {"type": "container", "parent": 0, "x": 295, "y": 125,
-         "w": 32, "h": 12, "bg_color": orange, "radius": 6},
-        label(331, 122, 145, 28, "Long-press", 18, orange),
-        label(295, 148, 181, 36, "Chat with Claw", 24, white),
+    ]
+    if _show_claw_guide():
+        objs.extend([
+            {"type": "container", "parent": 0, "x": 295, "y": 125,
+             "w": 32, "h": 12, "bg_color": orange, "radius": 6},
+            label(331, 122, 145, 28, "Long-press", 18, orange),
+            label(295, 148, 181, 36, "Chat with Claw", 24, white),
+        ])
+    objs.extend([
         label(12, 403, 170, 25, "Boot Key", 18, orange),
         label(12, 426, 170, 34, "Boot Mode", 24, white),
         label(188, 404, 120, 25, "Power Key", 18, orange),
         label(188, 427, 175, 34, "Power Off/On", 24, white),
-    ]
+    ])
+    return objs
 
 
 def scene_g1():

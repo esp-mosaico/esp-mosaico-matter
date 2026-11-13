@@ -17,6 +17,7 @@ set(http_server_srcs
     "http_server_assets.c"
     "http_server_config_api.c"
     "http_server_status_api.c"
+    "http_server_xiaozhi_api.c"
     "http_server_files_api.c"
     "http_server_json.c"
     "http_server_utils.c"

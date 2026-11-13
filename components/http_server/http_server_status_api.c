@@ -36,6 +36,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "matter_enabled", http_server_matter_enabled());
     http_server_json_add_string(root, "matter_role", HTTP_SERVER_MATTER_ROLE);
     cJSON_AddBoolToObject(root, "claw_enabled", ctx->claw_enabled);
+    cJSON_AddBoolToObject(root, "xiaozhi_enabled", http_server_xiaozhi_enabled());
     cJSON_AddBoolToObject(root, "webim_supported", ctx->claw_enabled && ctx->extension.webim_supported);
     cJSON_AddBoolToObject(root, "wechat_login_supported", ctx->claw_enabled && ctx->extension.wechat_login_supported);
     cJSON_AddBoolToObject(root, "memory_supported", ctx->claw_enabled && ctx->extension.memory_supported);

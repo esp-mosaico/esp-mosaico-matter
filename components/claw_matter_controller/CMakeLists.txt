@@ -16,7 +16,8 @@ idf_component_register(
         "private"
     REQUIRES
         local_fabric
-    PRIV_REQUIRES
-        app_claw
-        cap_lua
 )
+
+if(CONFIG_CLAW_MATTER_LUA_ENABLE)
+    idf_component_optional_requires(PRIVATE app_claw cap_lua)
+endif()

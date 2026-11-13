@@ -688,6 +688,15 @@ static void setup_progress_render(const uint16_t *binds, uint8_t progress)
     s_setup.rendered_progress = progress;
 }
 
+static bool setup_claw_agent(void)
+{
+#if MOSAICO_UI_WITH_CLAW
+    return true;
+#else
+    return false;
+#endif
+}
+
 static void setup_overview_render(void)
 {
     if (s_setup.ui == NULL) {
@@ -699,6 +708,9 @@ static void setup_overview_render(void)
     } else if (s_setup.network_skipped) {
         network = "Skipped · Not configured";
     }
+    (void)gsp_setup_center_setup_network_summary_set_text(
+        s_setup.ui, network);
+#if MOSAICO_UI_WITH_CLAW
     const char *wechat = s_setup.wechat_configured
         ? "Mosaico-Lab · Linked"
         : (s_setup.wechat_skipped ? "Skipped · Not linked" : "Not linked");
@@ -707,8 +719,6 @@ static void setup_overview_render(void)
             ? s_setup.settings_snapshot.llm.model : "Configured")
         : (s_setup.llm_skipped ? "Skipped · Not configured"
                                : "Not configured");
-    (void)gsp_setup_center_setup_network_summary_set_text(
-        s_setup.ui, network);
     (void)gsp_setup_center_setup_wechat_summary_set_text(
         s_setup.ui, wechat);
     (void)gsp_setup_center_setup_llm_summary_set_text(s_setup.ui, llm);
@@ -716,6 +726,7 @@ static void setup_overview_render(void)
         s_setup.ui, wechat);
     (void)gsp_setup_center_setup_integrations_llm_summary_set_text(
         s_setup.ui, llm);
+#endif
 }
 
 static void setup_password_detach(void)
@@ -1478,21 +1489,25 @@ static void setup_network_apply_model(int64_t now_us)
     setup_overview_render();
 }
 
-static void setup_advance_after_network(int64_t now_us)
-{
-    if (s_setup.mode == MOSAIC_SETUP_MODE_ONBOARDING) {
-        setup_open_wechat(now_us, SETUP_WECHAT_ENTRY_ONBOARDING);
-    } else {
-        setup_overview_render();
-        (void)setup_pop(s_setup.overview_page, now_us);
-    }
-}
-
 static void setup_finish_onboarding(int64_t now_us)
 {
     s_setup.onboarding_complete = true;
     setup_overview_render();
     (void)setup_push(SETUP_PAGE_DONE, true, now_us);
+}
+
+static void setup_advance_after_network(int64_t now_us)
+{
+    if (s_setup.mode == MOSAIC_SETUP_MODE_ONBOARDING) {
+        if (setup_claw_agent()) {
+            setup_open_wechat(now_us, SETUP_WECHAT_ENTRY_ONBOARDING);
+        } else {
+            setup_finish_onboarding(now_us);
+        }
+    } else {
+        setup_overview_render();
+        (void)setup_pop(s_setup.overview_page, now_us);
+    }
 }
 
 static bool setup_return_to_requester(void)
@@ -1536,12 +1551,12 @@ static void setup_handle_call(const mosaic_event_t *event)
         }
         break;
     case GSP_ACT_ID_SETUP_OVERVIEW_WECHAT:
-        if (s_setup.page == s_setup.overview_page) {
+        if (setup_claw_agent() && s_setup.page == s_setup.overview_page) {
             setup_open_wechat(now_us, SETUP_WECHAT_ENTRY_APP);
         }
         break;
     case GSP_ACT_ID_SETUP_OVERVIEW_LLM:
-        if (s_setup.page == s_setup.overview_page) {
+        if (setup_claw_agent() && s_setup.page == s_setup.overview_page) {
             setup_open_llm(now_us);
         }
         break;
@@ -1934,6 +1949,13 @@ static void setup_start(esp_gsp_handle_t ui, int64_t now_us)
     } else {
         s_setup.mode = MOSAIC_SETUP_MODE_ONBOARDING;
         s_setup.route = MOSAIC_SETUP_ROUTE_NETWORK;
+    }
+    if (!setup_claw_agent() &&
+            (s_setup.route == MOSAIC_SETUP_ROUTE_WECHAT ||
+             s_setup.route == MOSAIC_SETUP_ROUTE_LLM ||
+             s_setup.route == MOSAIC_SETUP_ROUTE_INTEGRATIONS)) {
+        s_setup.route = s_setup.mode == MOSAIC_SETUP_MODE_ONBOARDING
+            ? MOSAIC_SETUP_ROUTE_NETWORK : MOSAIC_SETUP_ROUTE_OVERVIEW;
     }
     if (s_setup.route == MOSAIC_SETUP_ROUTE_INTEGRATIONS) {
         s_setup.overview_page = SETUP_PAGE_INTEGRATIONS;

@@ -1,0 +1,12 @@
+set(MOSAIC_APP_NAME xiaozhi)
+set(MOSAIC_APP_MODULE_SOURCE xiaozhi_app.c)
+set(MOSAIC_APP_MODULE_SYMBOL mosaic_xiaozhi_app)
+set(MOSAIC_APP_BUNDLE generated/xiaozhi_480.gspb)
+set(MOSAIC_APP_SCENE_DIR scene)
+set(MOSAIC_APP_SCENE_JSON scene/xiaozhi_480.json)
+set(MOSAIC_APP_GENERATOR scene/gen_scene.py)
+set(MOSAIC_APP_SCENE_SOURCES fonts/NotoEmoji-Regular.ttf)
+set(MOSAIC_APP_LOGIC NATIVE)
+set(MOSAIC_APP_TICK_MS 250)
+
+set(MOSAIC_APP_REQUIRED 1)
