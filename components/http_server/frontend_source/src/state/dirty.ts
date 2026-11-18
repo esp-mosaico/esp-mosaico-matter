@@ -13,7 +13,8 @@ export type TabId =
   | 'capabilities'
   | 'skills'
   | 'files'
-  | 'matter';
+  | 'matter'
+  | 'xiaozhi';
 
 const [dirtyTabs, setDirtyTabs] = createSignal<Record<TabId, boolean>>({
   status: false,
@@ -28,6 +29,7 @@ const [dirtyTabs, setDirtyTabs] = createSignal<Record<TabId, boolean>>({
   skills: false,
   files: false,
   matter: false,
+  xiaozhi: false,
 });
 
 export function isDirty(tab: TabId) {

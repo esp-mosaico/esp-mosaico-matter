@@ -103,6 +103,27 @@ MOSAIC = FONT
 ASSETS = '../../common/assets'
 WITH_THREAD_BR = os.environ.get('MOSAIC_HUB_THREAD_BR', '1') == '1'
 
+_AGENT_SHORTCUTS = {
+    'claw': ('claw', 'CLAW', 'app_ai_create'),
+    'xiaozhi': ('xiaozhi', 'XiaoZhi', 'app_xiaozhi'),
+}
+
+def agent_shortcut():
+    raw = os.environ.get('MOSAIC_HUB_AGENT')
+    if raw is None:
+        raw = 'claw'
+    name = raw.strip()
+    if name in ('', '0', 'none'):
+        return None
+    shortcut = _AGENT_SHORTCUTS.get(name, (name, name, f'app_{name}'))
+    icon = (HERE / f'{ASSETS}/icons/{shortcut[0]}.png').resolve()
+    if not icon.is_file():
+        raise SystemExit(
+            f'hub agent {name!r} needs launcher icon {icon}')
+    return shortcut
+
+AGENT_SHORTCUT = agent_shortcut()
+
 # Figma 首页1-熄屏 (AOD only) — not the same as 时钟.
 AOD_DATE_SIZE = 26
 AOD_TIME_SIZE = 144
@@ -138,7 +159,8 @@ HUB_IMAGES = [
     (f'{ASSETS}/icons/camera.png', 118, 118),
     (f'{ASSETS}/icons/matter.png', 118, 118),
     *([(f'{ASSETS}/icons/thread.png', 96, 96)] if WITH_THREAD_BR else []),
-    (f'{ASSETS}/icons/claw.png', 118, 118),
+    *([(f'{ASSETS}/icons/{AGENT_SHORTCUT[0]}.png', 118, 118)]
+      if AGENT_SHORTCUT else []),
     (f'{ASSETS}/icons/settings.png', 118, 118),
     (f'{ASSETS}/icons/skills.png', 118, 118),
     *[(f'{ASSETS}/control_center/{name}.png', width, height)
@@ -295,10 +317,9 @@ def build_clock_face(objs, parent):
     shortcuts = [('matter', 'Matter', 'app_matter')]
     if WITH_THREAD_BR:
         shortcuts.append(('thread', 'Thread', 'app_thread_br'))
-    shortcuts.extend((
-        ('claw', 'CLAW', 'app_ai_create'),
-        ('settings', 'Settings', 'app_settings'),
-    ))
+    if AGENT_SHORTCUT is not None:
+        shortcuts.append(AGENT_SHORTCUT)
+    shortcuts.append(('settings', 'Settings', 'app_settings'))
     for index, (icon, text, cb) in enumerate(shortcuts):
         x = ICON_COLS[0] + index * (ICON_COLS[-1] - ICON_COLS[0]) // (len(shortcuts) - 1)
         objs.append(image(

@@ -40,6 +40,7 @@ const PROVIDER_LINKS: Record<string, ExternalLinkPair> = {
 
 export const TAVILY_API_KEY_URL = 'https://app.tavily.com/';
 export const BRAVE_API_KEY_URL = 'https://api-dashboard.search.brave.com/app/keys';
+export const XIAOZHI_CONSOLE_URL = 'https://xiaozhi.me/console/agents';
 
 export const IM_CREDENTIAL_URLS = {
   telegram: 'https://t.me/BotFather',

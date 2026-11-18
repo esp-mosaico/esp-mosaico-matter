@@ -51,8 +51,10 @@
 #define SETTINGS_ABOUT_PAGE 2
 #define SETTINGS_SECURITY_PAGE 12
 #define SETTINGS_UPDATE_PAGE 13
+#define SETTINGS_WEB_SERVER_PAGE 14
 #define SETTINGS_DETAIL_PAGE 7
 #define SETTINGS_FACTORY_PAGE 8
+#define SETTINGS_WEB_SERVER_QR_SIZE 180U
 #define SETTINGS_FACTORY_HOLD_US INT64_C(3000000)
 #define SETTINGS_FACTORY_HOLD_X_MIN 64
 #define SETTINGS_FACTORY_HOLD_X_MAX 416
@@ -168,6 +170,7 @@ typedef struct {
     settings_qr_frame_t qr_frames[SETTINGS_INTEGRATION_QR_FRAMES];
     char rendered_channel_qr[MOSAIC_SETTINGS_LLM_URL_LEN];
     char rendered_llm_qr[MOSAIC_SETTINGS_LLM_URL_LEN];
+    char rendered_web_server_qr[MOSAIC_SETTINGS_PORTAL_URL_LEN];
     char rendered_phone_qr[MOSAIC_SETTINGS_PHONE_QR_LEN];
     char provisioning_ap_ssid[MOSAIC_SETTINGS_SSID_LEN];
     atomic_bool display_render_pending;
@@ -1002,28 +1005,78 @@ static void settings_open_detail(esp_gsp_handle_t ui,
     }
 }
 
+typedef enum {
+    SETTINGS_ROOT_AI = 0,
+    SETTINGS_ROOT_IM,
+    SETTINGS_ROOT_NETWORK,
+    SETTINGS_ROOT_WEB_SERVER,
+    SETTINGS_ROOT_DISPLAY,
+    SETTINGS_ROOT_SOUND,
+    SETTINGS_ROOT_SECURITY,
+    SETTINGS_ROOT_BATTERY,
+    SETTINGS_ROOT_ABOUT,
+} settings_root_id_t;
+
 typedef struct {
+    settings_root_id_t id;
     const char *title;
     const uint8_t *icon;
     size_t icon_size;
 } settings_root_row_t;
 
-#define SETTINGS_ROOT_ROW(_title, _name) { \
+#define SETTINGS_ROOT_ROW(_id, _title, _name) { \
+    .id = (_id), \
     .title = (_title), \
     .icon = settings_root_icon_##_name, \
     .icon_size = sizeof(settings_root_icon_##_name), \
 }
 
 static const settings_root_row_t s_root_rows[] = {
-    SETTINGS_ROOT_ROW("AI Model", ai),
-    SETTINGS_ROOT_ROW("IM Channels", channels),
-    SETTINGS_ROOT_ROW("Network", network),
-    SETTINGS_ROOT_ROW("Display", display),
-    SETTINGS_ROOT_ROW("Sound", sound),
-    SETTINGS_ROOT_ROW("Security", security),
-    SETTINGS_ROOT_ROW("Battery", battery),
-    SETTINGS_ROOT_ROW("About", about),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_AI, "AI Model", ai),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_IM, "IM Channels", channels),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_NETWORK, "Network", network),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_WEB_SERVER, "Web Server", web),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_DISPLAY, "Display", display),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_SOUND, "Sound", sound),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_SECURITY, "Security", security),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_BATTERY, "Battery", battery),
+    SETTINGS_ROOT_ROW(SETTINGS_ROOT_ABOUT, "About", about),
 };
+
+static bool settings_root_row_enabled(const settings_root_row_t *row)
+{
+#if MOSAICO_UI_WITH_CLAW
+    return row->id != SETTINGS_ROOT_WEB_SERVER;
+#else
+    return row->id != SETTINGS_ROOT_AI && row->id != SETTINGS_ROOT_IM;
+#endif
+}
+
+static size_t settings_root_visible_count(void)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < sizeof(s_root_rows) / sizeof(s_root_rows[0]); ++i) {
+        if (settings_root_row_enabled(&s_root_rows[i])) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+static const settings_root_row_t *settings_root_row_for_item(uint32_t item)
+{
+    uint32_t seen = 0;
+    for (size_t i = 0; i < sizeof(s_root_rows) / sizeof(s_root_rows[0]); ++i) {
+        if (!settings_root_row_enabled(&s_root_rows[i])) {
+            continue;
+        }
+        if (seen == item) {
+            return &s_root_rows[i];
+        }
+        ++seen;
+    }
+    return NULL;
+}
 
 static const char *settings_wlan_summary(void)
 {
@@ -1065,35 +1118,48 @@ static bool settings_any_im_is_bound(void)
            s_state.snapshot.im.telegram_configured;
 }
 
+static const char *settings_web_server_summary(void)
+{
+    const mosaic_settings_network_t *net = &s_state.snapshot.network;
+    if (net->connected && net->ip[0] != '\0') {
+        return net->ip;
+    }
+    return "Offline";
+}
+
 static gsp_err_t settings_root_list_bind_item(
     esp_gsp_handle_t ui, esp_gsp_row_t row, uint32_t item_index,
     void *user_ctx)
 {
     (void)user_ctx;
-    if (item_index >= sizeof(s_root_rows) / sizeof(s_root_rows[0])) {
+    const settings_root_row_t *item = settings_root_row_for_item(item_index);
+    if (item == NULL) {
         return GSP_ERR_INVALID_ARG;
     }
-    char value[16] = "";
+    char value[32] = "";
     const char *value_text = value;
-    switch (item_index) {
-    case 0:
+    switch (item->id) {
+    case SETTINGS_ROOT_AI:
         value_text = settings_llm_is_bound() ? "Bound" : "Unbound";
         break;
-    case 1:
+    case SETTINGS_ROOT_IM:
         value_text = settings_any_im_is_bound() ? "Bound" : "Unbound";
         break;
-    case 2:
+    case SETTINGS_ROOT_NETWORK:
         value_text = settings_wlan_summary();
         break;
-    case 3:
+    case SETTINGS_ROOT_WEB_SERVER:
+        value_text = settings_web_server_summary();
+        break;
+    case SETTINGS_ROOT_DISPLAY:
         (void)snprintf(value, sizeof(value), "%" PRId32 "%%",
                        s_state.brightness);
         break;
-    case 4:
+    case SETTINGS_ROOT_SOUND:
         (void)snprintf(value, sizeof(value), "%" PRId32 "%%",
                        s_state.volume);
         break;
-    case 6:
+    case SETTINGS_ROOT_BATTERY:
         if (s_state.snapshot.battery.available) {
             (void)snprintf(value, sizeof(value), "%u%%",
                            s_state.snapshot.battery.state_of_charge);
@@ -1101,16 +1167,16 @@ static gsp_err_t settings_root_list_bind_item(
             value_text = "--";
         }
         break;
-    default:
+    case SETTINGS_ROOT_SECURITY:
+    case SETTINGS_ROOT_ABOUT:
         break;
     }
     esp_gsp_err_t err =
         gsp_settings_settings_root_row_row_set_icon_resource(
-            ui, row, s_root_rows[item_index].icon,
-            s_root_rows[item_index].icon_size);
+            ui, row, item->icon, item->icon_size);
     if (err == ESP_GSP_OK) {
         err = gsp_settings_settings_root_row_row_set_title_text(
-            ui, row, s_root_rows[item_index].title);
+            ui, row, item->title);
     }
     if (err == ESP_GSP_OK) {
         err = gsp_settings_settings_root_row_row_set_value_text(
@@ -1138,7 +1204,7 @@ static void settings_root_list_attach(esp_gsp_handle_t ui)
         return;
     }
     (void)esp_gsp_list_set_total(
-        ui, s_root_list, sizeof(s_root_rows) / sizeof(s_root_rows[0]));
+        ui, s_root_list, settings_root_visible_count());
     settings_root_list_refresh(ui);
 }
 
@@ -2870,6 +2936,87 @@ static void settings_channels_refresh(esp_gsp_handle_t ui)
                      sizeof(s_state.rendered_channel_qr));
 }
 
+static bool settings_web_server_page_visible(esp_gsp_handle_t ui)
+{
+    uint16_t top = 0U;
+    return esp_gsp_stack_view_get_top(
+            ui, GSP_OBJ_KEY_SETTINGS_STACK, &top) == ESP_GSP_OK &&
+        top == SETTINGS_WEB_SERVER_PAGE;
+}
+
+static void settings_web_server_render(esp_gsp_handle_t ui)
+{
+    const mosaic_settings_network_t *net = &s_state.snapshot.network;
+    const bool online = net->connected && net->ip[0] != '\0';
+
+    (void)esp_gsp_set_visible(ui, GSP_BIND_SETTINGS_WEB_SERVER_ONLINE_VISIBLE,
+                              online);
+    (void)esp_gsp_set_visible(ui, GSP_BIND_SETTINGS_WEB_SERVER_OFFLINE_VISIBLE,
+                              !online);
+
+    if (online) {
+        char display_url[MOSAIC_SETTINGS_PORTAL_URL_LEN];
+        char qr_url[MOSAIC_SETTINGS_PORTAL_URL_LEN];
+        char ssid_line[MOSAIC_SETTINGS_SSID_LEN + 16U];
+
+        (void)snprintf(display_url, sizeof(display_url), "http://%s", net->ip);
+        (void)snprintf(qr_url, sizeof(qr_url), "http://%s/", net->ip);
+        if (net->ssid[0] != '\0') {
+            (void)snprintf(ssid_line, sizeof(ssid_line), "Wi-Fi: %s",
+                           net->ssid);
+        } else {
+            strlcpy(ssid_line, "Connected", sizeof(ssid_line));
+        }
+
+        (void)esp_gsp_set_text(ui, GSP_BIND_SETTINGS_WEB_SERVER_URL,
+                               display_url);
+        (void)esp_gsp_set_text(ui, GSP_BIND_SETTINGS_WEB_SERVER_SSID,
+                               ssid_line);
+        settings_qr_push(ui, GSP_BIND_SETTINGS_WEB_SERVER_QR_CANVAS,
+                         SETTINGS_WEB_SERVER_QR_SIZE, qr_url,
+                         s_state.rendered_web_server_qr,
+                         sizeof(s_state.rendered_web_server_qr));
+    } else {
+        s_state.rendered_web_server_qr[0] = '\0';
+    }
+}
+
+static void settings_web_server_poll_wifi(esp_gsp_handle_t ui)
+{
+    if (s_state.ops.get_wifi_status != NULL) {
+        mosaic_settings_network_t network = s_state.snapshot.network;
+        if (s_state.ops.get_wifi_status(
+                s_state.ops.user_ctx, &network) == ESP_OK) {
+            const bool changed =
+                s_state.snapshot.network.connected != network.connected ||
+                strcmp(s_state.snapshot.network.ip, network.ip) != 0 ||
+                strcmp(s_state.snapshot.network.ssid, network.ssid) != 0;
+            s_state.snapshot.network = network;
+            if (changed) {
+                settings_root_list_refresh(ui);
+            }
+        }
+    }
+    settings_web_server_render(ui);
+}
+
+static void settings_open_web_server(esp_gsp_handle_t ui)
+{
+    if (settings_web_server_page_visible(ui)) {
+        return;
+    }
+    if (esp_gsp_stack_view_push(ui, GSP_OBJ_KEY_SETTINGS_STACK,
+            SETTINGS_WEB_SERVER_PAGE, true) != ESP_GSP_OK) {
+        (void)mosaic_top_notice_show(
+            ui, &s_top_notice, "Web Server",
+            "Unable to open page", SETTINGS_NOTICE_DURATION_MS);
+        return;
+    }
+    mosaic_app_shell_set_root_visible(ui, false);
+    s_state.rendered_web_server_qr[0] = '\0';
+    settings_web_server_poll_wifi(ui);
+}
+
 static void settings_integrations_pop(esp_gsp_handle_t ui)
 {
     settings_refresh_snapshot(ui);
@@ -2907,15 +3054,20 @@ static void settings_dispatch_call(
 {
     switch (event->data.call.action_id) {
     case GSP_ACT_ID_SETTINGS_ROOT_ROW: {
-        const uint32_t item = event->data.call.item;
-        if (item >= sizeof(s_root_rows) / sizeof(s_root_rows[0])) {
+        const settings_root_row_t *item =
+            settings_root_row_for_item(event->data.call.item);
+        if (item == NULL) {
             return;
         }
-        if (item <= 1U) {
-            settings_open_integration(ui, item == 0U);
+        if (item->id == SETTINGS_ROOT_AI || item->id == SETTINGS_ROOT_IM) {
+            settings_open_integration(ui, item->id == SETTINGS_ROOT_AI);
             return;
         }
-        if (item == 2U) {
+        if (item->id == SETTINGS_ROOT_WEB_SERVER) {
+            settings_open_web_server(ui);
+            return;
+        }
+        if (item->id == SETTINGS_ROOT_NETWORK) {
             if (s_state.wlan_page_active) {
                 return;
             }
@@ -2945,30 +3097,30 @@ static void settings_dispatch_call(
             settings_wlan_list_attach(ui);
             return;
         }
-        if (item == 6U) {
+        if (item->id == SETTINGS_ROOT_BATTERY) {
             settings_refresh_snapshot(ui);
             settings_open_detail(ui, SETTINGS_DETAIL_BATTERY);
             return;
         }
-        if (item == 7U) {
+        if (item->id == SETTINGS_ROOT_ABOUT) {
             settings_refresh_snapshot(ui);
             settings_open_detail(ui, SETTINGS_DETAIL_ABOUT);
             s_state.update_notice_sequence =
                 s_state.snapshot.update.sequence;
             return;
         }
-        static const uint16_t pages[] = {
-            [3] = SETTINGS_DISPLAY_PAGE,
-            [4] = SETTINGS_SOUND_PAGE,
-            [5] = SETTINGS_SECURITY_PAGE,
-        };
-        const uint16_t page = pages[item];
-        if (page == 0U || esp_gsp_stack_view_push(
+        const uint16_t page = item->id == SETTINGS_ROOT_DISPLAY
+            ? SETTINGS_DISPLAY_PAGE
+            : item->id == SETTINGS_ROOT_SOUND
+                ? SETTINGS_SOUND_PAGE
+                : SETTINGS_SECURITY_PAGE;
+        if (esp_gsp_stack_view_push(
                 ui, GSP_OBJ_KEY_SETTINGS_STACK, page, true) != ESP_GSP_OK) {
             return;
         }
         mosaic_app_shell_set_root_visible(ui, false);
-        if (item == 3U || item == 4U) {
+        if (item->id == SETTINGS_ROOT_DISPLAY ||
+                item->id == SETTINGS_ROOT_SOUND) {
             s_state.display_page_active = true;
             s_state.display_reset_pending = false;
             settings_display_request_render();
@@ -3470,6 +3622,7 @@ static void settings_event(
         s_state.integration_page = 0;
         s_state.integration_rendered_progress = UINT8_MAX;
         s_state.rendered_channel_qr[0] = '\0';
+        s_state.rendered_web_server_qr[0] = '\0';
         s_state.rendered_phone_qr[0] = '\0';
         s_state.update_page_active = false;
         s_state.update_leave_pending = false;
@@ -3498,6 +3651,9 @@ static void settings_event(
         settings_wlan_refresh_status(ui);
         settings_root_list_refresh(ui);
         settings_refresh_about_detail(ui);
+        if (settings_web_server_page_visible(ui)) {
+            settings_web_server_render(ui);
+        }
         if (s_state.update_page_active) {
             settings_render_update_page(ui);
         }
@@ -3528,6 +3684,9 @@ static void settings_event(
         /* Also consume the asynchronous cache on the 1 s App tick. This makes
          * list delivery independent of a transiently full loader command
          * queue. settings_wlan_scan refreshes only when content changed. */
+        if (settings_web_server_page_visible(ui)) {
+            settings_web_server_poll_wifi(ui);
+        }
         if (s_state.integration_page == SETTINGS_INTEGRATIONS_CHANNELS_PAGE) {
             settings_channels_refresh(ui);
         } else if (s_state.integration_page ==

@@ -48,4 +48,6 @@ esp_err_t http_server_register_status_routes(httpd_handle_t server);
 esp_err_t http_server_register_files_routes(httpd_handle_t server);
 esp_err_t http_server_register_matter_routes(httpd_handle_t server);
 bool http_server_matter_enabled(void);
+esp_err_t http_server_register_xiaozhi_routes(httpd_handle_t server);
+bool http_server_xiaozhi_enabled(void);
 esp_err_t http_server_captive_404_handler(httpd_req_t *req, httpd_err_code_t error);

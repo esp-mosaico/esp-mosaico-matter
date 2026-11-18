@@ -118,6 +118,31 @@ function(mosaic_setup_bundle_generation_for_target
         list(PREPEND app_manifests "${_hub_manifest}")
     endif()
 
+    set(hub_thread_br 0)
+    if("${root}/apps/thread_br/app.cmake" IN_LIST app_manifests)
+        set(hub_thread_br 1)
+    endif()
+    set(hub_agent "")
+    if("${root}/apps/ai_create/app.cmake" IN_LIST app_manifests)
+        set(hub_agent "claw")
+    elseif("${root}/apps/xiaozhi/app.cmake" IN_LIST app_manifests)
+        set(hub_agent "xiaozhi")
+    endif()
+
+    # Track the active scene environment in a stamp file so switching agents or
+    # optional apps invalidates cached .gspb bundles during incremental builds.
+    set(scene_env_stamp "${gen_root}/scene_env.stamp")
+    set(scene_env_content
+        "MOSAIC_HUB_AGENT=${hub_agent}\nMOSAIC_HUB_THREAD_BR=${hub_thread_br}\n")
+    set(prev_scene_env_content "")
+    if(EXISTS "${scene_env_stamp}")
+        file(READ "${scene_env_stamp}" prev_scene_env_content)
+    endif()
+    if(NOT prev_scene_env_content STREQUAL "${scene_env_content}")
+        file(MAKE_DIRECTORY "${gen_root}")
+        file(WRITE "${scene_env_stamp}" "${scene_env_content}")
+    endif()
+
     set(intermediate_bundles)
     set(bundle_rel_paths)
     set(font_link_outputs)
@@ -177,14 +202,9 @@ function(mosaic_setup_bundle_generation_for_target
             "GSPC=${mosaic_gspc}"
             "GSP_ROOT=${gsp_dir}"
             "ESP_GSP_ROOT=${gsp_dir}"
-            "MOSAIC_GENERATED_DIR=${out_dir}")
-        if(MOSAIC_APP_NAME STREQUAL "mosaic-hub")
-            set(hub_thread_br 0)
-            if("${root}/apps/thread_br/app.cmake" IN_LIST app_manifests)
-                set(hub_thread_br 1)
-            endif()
-            list(APPEND regen_env "MOSAIC_HUB_THREAD_BR=${hub_thread_br}")
-        endif()
+            "MOSAIC_GENERATED_DIR=${out_dir}"
+            "MOSAIC_HUB_AGENT=${hub_agent}"
+            "MOSAIC_HUB_THREAD_BR=${hub_thread_br}")
         if(DEFINED MOSAIC_SCENE_PROFILE AND
                 NOT MOSAIC_SCENE_PROFILE STREQUAL "")
             if(NOT EXISTS "${MOSAIC_SCENE_PROFILE}")
@@ -205,6 +225,7 @@ function(mosaic_setup_bundle_generation_for_target
             DEPENDS "${module_dir}/scene/regenerate.sh"
                     "${module_dir}/${MOSAIC_APP_GENERATOR}"
                     ${scene_source_deps}
+                    "${scene_env_stamp}"
                     "${root}/common/scene_common.py"
                     "${root}/common/font_paths.py"
                     "${root}/common/fonts/NotoSans-Regular.ttf"

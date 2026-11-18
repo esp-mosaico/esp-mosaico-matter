@@ -58,7 +58,8 @@ PAGE_INTEGRATIONS_CHANNELS = 10
 PAGE_SOUND = 11
 PAGE_SECURITY = 12
 PAGE_UPDATE = 13
-PAGE_COUNT = 14
+PAGE_WEB_SERVER = 14
+PAGE_COUNT = 15
 STACK_CAPACITY = 8
 
 # Mock scan results for the settings WLAN list (prototype SYS_NETWORKS + extras).
@@ -100,6 +101,7 @@ ROOT_SOUND_ICON = "settings_root_sound.png"
 ROOT_AI_ICON = "settings_root_ai.png"
 ROOT_CHANNELS_ICON = "settings_root_channels.png"
 ROOT_NETWORK_ICON = "settings_root_network.png"
+ROOT_WEB_ICON = "settings_root_web.png"
 ROOT_SECURITY_ICON = "settings_root_security.png"
 ROOT_ABOUT_ICON = "settings_root_about.png"
 ROOT_CHEVRON_ICON = "settings_root_chevron.png"
@@ -112,6 +114,7 @@ IMAGES: list[tuple[str, int, int]] = [
     (QR_PLACEHOLDER, QR_SIZE, QR_SIZE),
     (QR_PLACEHOLDER, 128, 128),
     (QR_PLACEHOLDER, 184, 184),
+    (QR_PLACEHOLDER, 180, 180),
     *((asset, 88, 88) for pair in CHANNEL_ICON_ASSETS.values()
       for asset in pair),
     (ROOT_DYNAMIC_PLACEHOLDER, 48, 48),
@@ -127,6 +130,7 @@ IMAGES: list[tuple[str, int, int]] = [
     (ROOT_AI_ICON, 48, 48),
     (ROOT_CHANNELS_ICON, 48, 48),
     (ROOT_NETWORK_ICON, 48, 48),
+    (ROOT_WEB_ICON, 48, 48),
     (ROOT_SECURITY_ICON, 48, 48),
     (ROOT_ABOUT_ICON, 48, 48),
     (ROOT_CHEVRON_ICON, 48, 48),
@@ -1179,6 +1183,36 @@ def _build_factory(objs, page):
                       size=32, align="center"))
 
 
+def _build_web_server(objs, page):
+    _web_nav(objs, page, "Web Server", "nav_web_server")
+
+    online_layer = len(objs)
+    objs.append(layer(page, 0, 64, CONTENT_W, CONTENT_H - 64, hidden=True,
+                      name="settings_web_server_online_layer",
+                      bind="settings_web_server_online_visible"))
+    objs.append(container(online_layer, 142, 34, 196, 196, bg=FG, radius=10))
+    objs.append(image(online_layer, QR_PLACEHOLDER, 150, 42, 180, 180,
+                      name="settings_web_server_qr_canvas",
+                      bind="settings_web_server_qr_canvas"))
+    _bound_label(objs, online_layer, 24, 260, 432, 42, "http://0.0.0.0",
+                 "settings_web_server_url", size=30, color=FG,
+                 align="center")
+    _bound_label(objs, online_layer, 24, 310, 432, 30, "Wi-Fi: --",
+                 "settings_web_server_ssid", size=20, color=MUTED,
+                 align="center")
+
+    offline_layer = len(objs)
+    objs.append(layer(page, 0, 64, CONTENT_W, CONTENT_H - 64,
+                      name="settings_web_server_offline_layer",
+                      bind="settings_web_server_offline_visible"))
+    objs.append(label(offline_layer, 24, 132, 432, 42,
+                      "Wi-Fi Not Connected", size=30, color=FG,
+                      align="center"))
+    objs.append(label(offline_layer, 24, 182, 432, 30,
+                      "Connect to Wi-Fi to access Web Server",
+                      size=20, color=MUTED, align="center"))
+
+
 def build_settings_ui(objs, content):
     stack = len(objs)
     objs.append({
@@ -1232,6 +1266,8 @@ def build_settings_ui(objs, content):
     _build_security(objs, page)
     page = _page(objs, stack, PAGE_UPDATE)
     _build_update(objs, page)
+    page = _page(objs, stack, PAGE_WEB_SERVER)
+    _build_web_server(objs, page)
 
     # Notifications belong to the App stage rather than an individual
     # StackView page. Connection failures arrive after the password page has

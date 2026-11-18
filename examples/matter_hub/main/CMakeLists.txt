@@ -8,7 +8,6 @@ set(main_priv_requires
     app_system_config
     audio_hub
     claw_hw_registry
-    claw_event_router
     cmd_wifi
     display_service
     esp_lvgl_present
@@ -65,4 +64,12 @@ endif()
 
 if(CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE)
     idf_component_optional_requires(PRIVATE weather_service update_check_service)
+endif()
+
+if(CONFIG_APP_MATTER_HUB_XIAOZHI)
+    idf_component_optional_requires(PRIVATE xiaozhi_voice)
+endif()
+
+if(CONFIG_APP_MATTER_HUB_CLAW)
+    idf_component_optional_requires(PRIVATE claw_event_router)
 endif()

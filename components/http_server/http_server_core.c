@@ -90,7 +90,7 @@ esp_err_t http_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.ctrl_port = HTTP_SERVER_CTRL_PORT;
-    config.max_uri_handlers = 32;
+    config.max_uri_handlers = 33;
     config.stack_size = 8192;
     config.max_open_sockets = 12;
     config.lru_purge_enable = true;
@@ -113,6 +113,7 @@ esp_err_t http_server_start(void)
         http_server_register_status_routes,
         http_server_register_files_routes,
         http_server_register_matter_routes,
+        http_server_register_xiaozhi_routes,
         s_ctx.extension.register_routes,
     };
     esp_err_t err = ESP_OK;

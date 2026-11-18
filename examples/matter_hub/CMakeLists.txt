@@ -29,6 +29,8 @@ set(HTTP_SERVER_MATTER_BACKEND controller CACHE STRING "HTTP Matter backend" FOR
 include("${ESP_MOSAICO_UPSTREAM}/tools/cmake/esp_idf_patch.cmake")
 include("${ESP_MOSAICO_UPSTREAM}/tools/cmake/flash_partition_defaults.cmake")
 
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/matter_hub_agent.cmake")
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(
     BOOTLOADER_EXTRA_COMPONENT_DIRS

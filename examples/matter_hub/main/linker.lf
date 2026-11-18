@@ -39,6 +39,8 @@ entries:
         settings_app: s_update_note_lines (mosaico_app_state)
         settings_app: s_wlan_networks (mosaico_app_state)
         mosaic_hub_app: s_weather_info (mosaico_app_state)
+        matter_home: s_home (mosaico_app_state)
+        xiaozhi_app: s_live (mosaico_app_state)
 
 # Matter's task-owned discovery and peer tables; no BLE/controller state.
 [mapping:mosaico_matter_discovery]
@@ -56,3 +58,21 @@ archive: libespressif__mdns.a
 entries:
     if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
         mdns_send (mosaico_app_state)
+
+[mapping:openthread_bss]
+archive: libopenthread.a
+entries:
+  if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+      * (extram_bss)
+
+[mapping:openthread_br]
+archive: libopenthread_br.a
+entries:
+  if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+      * (extram_bss)
+
+[mapping:mosaico_claw_memory]
+archive: libclaw_memory.a
+entries:
+    if SPIRAM = y && ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        claw_memory: s_memory (extram_bss)

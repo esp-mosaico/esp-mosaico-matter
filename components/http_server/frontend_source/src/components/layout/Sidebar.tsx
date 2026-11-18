@@ -36,6 +36,7 @@ const IconSkills: Component = () => <SquareFunction class={iconClass} />;
 const IconFiles: Component = () => <Folder class={iconClass} />;
 const IconWebIm: Component = () => <MessagesSquare class={iconClass} />;
 const IconMatter: Component = () => <Radio class={iconClass} />;
+const IconXiaozhi: Component = () => <Bot class={iconClass} />;
 
 export type LeafNode = {
   kind: 'leaf';
@@ -52,7 +53,8 @@ export type LeafNode = {
     | 'navLuaModules'
     | 'navFiles'
     | 'navWebIm'
-    | 'navMatter';
+    | 'navMatter'
+    | 'navXiaozhi';
   icon: Component;
 };
 export type GroupNode = {
@@ -79,6 +81,7 @@ export const NAV_TREE: NavNode[] = [
       { kind: 'leaf', id: 'webreq', labelKey: 'navWebReq', icon: IconSearch },
     ],
   },
+  { kind: 'leaf', id: 'xiaozhi', labelKey: 'navXiaozhi', icon: IconXiaozhi },
   { kind: 'leaf', id: 'matter', labelKey: 'navMatter', icon: IconMatter },
   { kind: 'leaf', id: 'memory', labelKey: 'navMemory', icon: IconMemory },
   { kind: 'leaf', id: 'webim', labelKey: 'navWebIm', icon: IconWebIm },

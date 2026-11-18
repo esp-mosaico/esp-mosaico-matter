@@ -5,3 +5,5 @@ phy_init,  data, phy,     0x2C000,  4K
 factory,   app,  factory, 0x30000,  9472K
 ui_apps,   data, 0x41,    0x970000, 3200K
 system,    data, littlefs,0xC90000, 3000K
+# WakeNet model.
+model,     data, spiffs,  0xF7E000, 512K

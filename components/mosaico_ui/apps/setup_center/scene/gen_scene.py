@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -205,6 +206,10 @@ def llm_config_footer(objs, parent, y):
                       bind="setup_llm_config_qr_canvas"))
 
 
+def _claw_agent():
+    raw = os.environ.get("MOSAIC_HUB_AGENT")
+    return raw is None or raw.strip() == "claw"
+
 def status_card(objs, parent, y, title, subtitle, name, action):
     events = call(action)
     objs.append(button(parent, 14, y, 452, 92, "", bg="#181819", radius=24,
@@ -219,16 +224,21 @@ def status_card(objs, parent, y, title, subtitle, name, action):
 
 
 def build_overview(objs, parent):
-    topbar(objs, parent, back="setup_center_close", title="AI SETUP")
-    objs.append(label(parent, 24, 68, 432, 58, "AI Setup", size=44))
+    claw = _claw_agent()
+    topbar(objs, parent, back="setup_center_close",
+           title="AI SETUP" if claw else "SETUP")
+    objs.append(label(parent, 24, 68, 432, 58,
+                      "AI Setup" if claw else "Setup", size=44))
     objs.append(label(parent, 24, 126, 432, 30,
-                      "Network, WeChat and LLM", size=20, color=MUTED))
+                      "Network, WeChat and LLM" if claw else "Network",
+                      size=20, color=MUTED))
     status_card(objs, parent, 172, "Network", "Not configured",
                 "setup_network", "setup_overview_network")
-    status_card(objs, parent, 272, "WeChat", "Not linked",
-                "setup_wechat", "setup_overview_wechat")
-    status_card(objs, parent, 372, "LLM", "Not configured",
-                "setup_llm", "setup_overview_llm")
+    if claw:
+        status_card(objs, parent, 272, "WeChat", "Not linked",
+                    "setup_wechat", "setup_overview_wechat")
+        status_card(objs, parent, 372, "LLM", "Not configured",
+                    "setup_llm", "setup_overview_llm")
 
 
 def build_integrations(objs, parent):

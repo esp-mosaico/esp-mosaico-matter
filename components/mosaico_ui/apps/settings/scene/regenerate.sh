@@ -5,7 +5,7 @@ set -euo pipefail
 GSPC="${GSPC:?set GSPC to the GSPC executable}"
 cd "$(dirname "$0")"
 GSP_ROOT="${GSP_ROOT:-${ESP_GSP_ROOT:-$(cd ../../../../.. && pwd)/examples/matter_hub/managed_components/espressif__esp-gsp}}"
-export PYTHONPATH="$GSP_ROOT/tools"
+export PYTHONPATH="$GSP_ROOT/tools${PYTHONPATH:+:$PYTHONPATH}"
 PROFILE="${MOSAIC_SCENE_PROFILE:-$(cd ../../../common && pwd)/mosaic_rgb565_auto.yaml}"
 STEM=settings
 APP_DIR="$(cd .. && pwd)"

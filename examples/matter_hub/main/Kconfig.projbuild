@@ -1,11 +1,24 @@
 menu "App Config"
 
+    choice APP_MATTER_HUB_AGENT
+        prompt "Matter hub agent"
+        default APP_MATTER_HUB_CLAW
+        help
+            Select which agent this firmware starts.
+
+        config APP_MATTER_HUB_NO_AGENT
+            bool "matter_hub_no_agent"
+
+        config APP_MATTER_HUB_CLAW
+            bool "matter_hub_claw"
+
+        config APP_MATTER_HUB_XIAOZHI
+            bool "matter_hub_xiaozhi"
+    endchoice
+
     config APP_CLAW_MOSAIC_GSP_ENABLE
         bool "esp-gsp Mosaic UI"
         depends on ESP_BOARD_DEV_DISPLAY_LCD_SUPPORT
-        depends on APP_CLAW_CAP_CORE
-        depends on APP_CLAW_CAP_SKILL_MGR
-        depends on APP_CLAW_CAP_IM_WECHAT
         select MOSAICO_UI_ENABLE
         default n
         help
