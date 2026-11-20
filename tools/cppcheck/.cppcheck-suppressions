@@ -1,3 +1,6 @@
+# Normal analysis intentionally limits branch exploration for this quick scan.
+normalCheckLevelMaxBranches
+
 # Cppcheck 2.13 misreads `auto *p = new (std::nothrow) T{}` as using p
 # before initialization. Reproduced with a standalone aggregate and <new>.
 # Keep these limited to the three affected files; recheck on tool upgrades.

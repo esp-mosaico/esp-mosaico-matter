@@ -1,0 +1,56 @@
+stages: [pre_check, build]
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH || $CI_COMMIT_TAG
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+default:
+  tags: [build]
+
+pre_commit:
+  stage: pre_check
+  image: $CI_REGISTRY/ci/images/pre-commit-python3.12:1
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends cppcheck
+    - pre-commit run --all-files
+
+build_firmware:
+  stage: build
+  image: $CI_REGISTRY/ci/images/idf-v6.2:2
+  variables:
+    IDF_CCACHE_ENABLE: "1"
+    CCACHE_BASEDIR: "$CI_PROJECT_DIR"
+    CCACHE_COMPILERCHECK: content
+    CCACHE_NOHASHDIR: "1"
+    CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime,file_stat_matches
+  script:
+    - . tools/ci/setup_idf.sh
+    - |
+      for variant in matter_hub_claw matter_hub_xiaozhi matter_hub_no_agent matter_bridge; do
+        project=examples/matter_hub
+        if [ "$variant" = matter_bridge ]; then
+          project=examples/matter_bridge
+        fi
+        # CMake patches managed dependencies; fullclean refuses to remove them.
+        # Reset generated CI files directly so each variant starts fresh.
+        rm -rf "$project/build" "$project/managed_components"
+        rm -f "$project/sdkconfig" "$project/sdkconfig.old"
+        bash tools/ci/build_firmware.sh "$variant"
+        # Save each variant's metadata before the next build replaces it.
+        artifact_dir="build/firmware/configs/$variant"
+        mkdir -p "$artifact_dir"
+        cp "$project/build/flasher_args.json" "$project/sdkconfig" \
+          "$project/dependencies.lock" "$artifact_dir/"
+      done
+  artifacts:
+    name: "firmware-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build/firmware/images/
+      - build/firmware/configs/
+    expire_in: 1 week

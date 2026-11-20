@@ -5,17 +5,17 @@
  */
 #include "http_server_priv.h"
 
-extern const uint8_t index_html_gz_start[] asm("_binary_index_html_gz_start");
-extern const uint8_t index_html_gz_end[]   asm("_binary_index_html_gz_end");
+extern const uint8_t _binary_index_html_gz_start[];
+extern const uint8_t _binary_index_html_gz_end[];
 
-extern const uint8_t favicon_svg_start[] asm("_binary_favicon_svg_start");
-extern const uint8_t favicon_svg_end[]   asm("_binary_favicon_svg_end");
+extern const uint8_t _binary_favicon_svg_start[];
+extern const uint8_t _binary_favicon_svg_end[];
 
 static esp_err_t favicon_handler(httpd_req_t *req)
 {
     return http_server_send_embedded_file(req,
-                                          favicon_svg_start,
-                                          favicon_svg_end,
+                                          _binary_favicon_svg_start,
+                                          _binary_favicon_svg_end,
                                           "image/svg+xml");
 }
 
@@ -24,8 +24,8 @@ static esp_err_t index_handler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     httpd_resp_set_hdr(req, "Vary", "Accept-Encoding");
     return http_server_send_embedded_file(req,
-                                          index_html_gz_start,
-                                          index_html_gz_end,
+                                          _binary_index_html_gz_start,
+                                          _binary_index_html_gz_end,
                                           "text/html; charset=utf-8");
 }
 

@@ -1,0 +1,92 @@
+name: Firmware Deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [matter_hub_claw, matter_hub_xiaozhi, matter_hub_no_agent, matter_bridge]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Cache compiler output
+        uses: actions/cache@v4
+        with:
+          path: .cache/ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-
+            ccache-${{ runner.os }}-${{ runner.arch }}-
+      - name: Build merged firmware
+        shell: bash
+        env:
+          IDF_CCACHE_ENABLE: "1"
+          CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_COMPILERCHECK: content
+          CCACHE_MAXSIZE: 2G
+          CCACHE_NOHASHDIR: "1"
+          CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime,file_stat_matches
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash -e -c '. tools/ci/setup_idf.sh; bash tools/ci/build_firmware.sh "$1"' _ "${{ matrix.variant }}" 2>&1 | tee build.log
+      - name: Report build failure
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          log = Path('build.log')
+          if log.exists():
+              tail = '\n'.join(log.read_text(errors='replace').splitlines()[-100:])
+              message = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Firmware build failure::{message}')
+          PYTHON
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.variant }}
+          path: build/firmware/images/
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          path: build/firmware/images/
+          merge-multiple: true
+      - uses: actions/configure-pages@v4
+      - name: Prepare firmware download site
+        run: python3 tools/ci/prepare_firmware_site.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/firmware/site/
+      - uses: actions/deploy-pages@v4
+        id: deployment

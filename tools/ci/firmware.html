@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP-Mosaico Matter firmware</title>
+  <style>
+    body { max-width: 900px; margin: 40px auto; padding: 0 20px; font: 16px/1.6 system-ui, sans-serif; color: #202124; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+    a { color: #0066cc; overflow-wrap: anywhere; }
+    code { font-size: .9em; }
+  </style>
+</head>
+<body>
+  <h1>ESP-Mosaico Matter firmware</h1>
+  <p>Download a merged firmware image for ESP-Mosaico (ESP32-S31, 16 MB flash and PSRAM),
+    then use the <a href="https://mosaico.ai/en/firmware">Mosaico firmware flasher</a> to install it.</p>
+  <h2>Choose firmware</h2>
+  <table>
+    <thead><tr><th>Download</th><th>Application</th></tr></thead>
+    <tbody>
+      <tr><td><a href="matter_hub_claw.bin" download>matter_hub_claw.bin</a></td><td>Matter hub with Web and on-device control, plus esp-claw chat.</td></tr>
+      <tr><td><a href="matter_hub_xiaozhi.bin" download>matter_hub_xiaozhi.bin</a></td><td>Matter hub with Web and on-device control, plus XiaoZhi voice control.</td></tr>
+      <tr><td><a href="matter_hub_no_agent.bin" download>matter_hub_no_agent.bin</a></td><td>Matter hub with Web and on-device control, without an onboard agent.</td></tr>
+      <tr><td><a href="matter_bridge.bin" download>matter_bridge.bin</a></td><td>Expose accessories and supported GPIO devices to external Matter controllers; configure GPIO devices through esp-claw.
+        <p><strong>Note:</strong> The bridge firmware ships with a test Device Attestation Certificate (DAC)
+          and Certification Declaration (CD). Your Matter ecosystem may display a warning that the device
+          is uncertified during commissioning.</p></td></tr>
+    </tbody>
+  </table>
+  <h2>Flash your device</h2>
+  <ol>
+    <li>Download the <code>.bin</code> for your application above.</li>
+    <li>Open the <a href="https://mosaico.ai/en/firmware">Mosaico firmware flasher</a>
+      in desktop Chrome, Edge, or another browser with Web Serial support.</li>
+    <li>Power off the device and connect its Type-C port with a USB data cable.
+      Hold <strong>BOOT</strong>, briefly press <strong>POWER</strong>, then release BOOT.</li>
+    <li>Select <strong>Custom Firmware</strong>, choose your downloaded file,
+      select <strong>Connect Device</strong>, and choose the board's serial port.</li>
+    <li>Select <strong>Start Flashing</strong> and keep the cable connected until it finishes.
+      If needed, power the device off and on again after flashing.</li>
+  </ol>
+  <p>Flashing may erase saved data. The merged image is written from address <code>0x0</code>;
+    you do not need to choose partition offsets.</p>
+  <p>After flashing, use the on-device setup to connect to Wi-Fi. Open the IP address
+    shown in Settings in a browser to access the Web UI.</p>
+  <p>For commissioning, agent setup, and accessories, see the
+    <a href="@SOURCE_URL@/examples/matter_hub/README.md">Matter hub guide</a> or
+    <a href="@SOURCE_URL@/examples/matter_bridge/README.md">Matter bridge guide</a>.</p>
+  <h2>Firmware commits</h2>
+  <ul>
+    @FIRMWARE_COMMITS@
+  </ul>
+</body>
+</html>
