@@ -478,8 +478,8 @@ void fabric_core_force_remove_work(intptr_t context)
 template <typename Operation, typename... Arguments>
 esp_err_t fabric_core_start_operation(Arguments &&...arguments)
 {
-    auto *operation = new (std::nothrow) Operation(
-        static_cast<Arguments &&>(arguments)...);
+    auto *operation = new (std::nothrow) Operation{
+        static_cast<Arguments &&>(arguments)...};
     if (operation == nullptr) {
         return ESP_ERR_NO_MEM;
     }

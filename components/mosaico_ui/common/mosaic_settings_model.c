@@ -11,7 +11,10 @@
 bool mosaic_settings_llm_is_configured(
     const mosaic_settings_snapshot_t *snapshot)
 {
-    if (snapshot == NULL || snapshot->llm.backend[0] == '\0' ||
+    if (snapshot == NULL) {
+        return false;
+    }
+    if (snapshot->llm.backend[0] == '\0' ||
             snapshot->llm.model[0] == '\0') {
         return false;
     }

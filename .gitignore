@@ -1,5 +1,5 @@
 # ESP-IDF generated output
-examples/*/build/
+build/
 examples/*/build-*/
 examples/*/managed_components/
 examples/*/components/gen_bmgr_codes/

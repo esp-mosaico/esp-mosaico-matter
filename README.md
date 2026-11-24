@@ -9,6 +9,8 @@ through the Web UI, the on-device UI, automation rules, or AI agents.
 - **Matter bridge**: expose locally attached devices and supported ESP-Mosaico
 accessories as Matter endpoints for external Matter controllers.
 
+<a href="https://esp-mosaico.github.io/esp-mosaico-matter/"><img src="https://img.shields.io/badge/Download-Firmware-0066CC?logo=espressif" alt="Download ESP-Mosaico Matter firmware"></a>
+
 ## Platform
 
 [ESP-Mosaico](https://mosaico.espressif.com/) is currently the only officially
@@ -56,3 +58,8 @@ Choose `matter_hub_no_agent` in menuconfig when you only need the UIs and automa
 | [matter_bridge](examples/matter_bridge/README.md) | Bridge firmware with esp-claw device configuration and ESP-Mosaico accessory support. |
 
 Follow each application's guide for build, flash, and setup instructions.
+
+## Flash prebuilt firmware
+
+Download prebuilt firmware and follow the flashing instructions on the
+[firmware downloads page](https://esp-mosaico.github.io/esp-mosaico-matter/).
