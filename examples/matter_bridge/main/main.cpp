@@ -4,10 +4,12 @@
 #include <cstdlib>
 #include <cstring>
 #include "app_claw.h"
+#include "app_capabilities.h"
 #include "app_config.h"
 #include "bridge_memory.h"
 #include "claw_paths.h"
 #include "esp_board_manager.h"
+#include "esp_board_manager_defs.h"
 #include "esp_check.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
@@ -31,8 +33,12 @@
 #include "claw_matter_bridge.h"
 #include "nvs_flash.h"
 #include "esp_app_desc.h"
+#include "trial_auth.h"
 #if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+#include "app_asr.h"
 #include "bridge_battery.h"
+#include "cap_im_ai_create.h"
+#include "claw_event_router.h"
 #include "mosaico_hotplug_bridge.h"
 #include "mosaico_matter_camera.h"
 #include "mosaico_ui.h"
@@ -56,6 +62,16 @@ static bool s_claw_started;
 static char s_ip[48];
 static bridge_core_handle_t s_matter_core;
 static bridge_dev_mngr_handle_t s_matter_dev_mngr;
+
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+static esp_err_t register_ai_create_capability(const app_claw_config_t *,
+                                              const app_claw_storage_paths_t *)
+{
+    ESP_RETURN_ON_ERROR(cap_im_ai_create_register_group(), TAG, "Register AI Create");
+    return claw_event_router_register_outbound_binding(
+        CAP_IM_AI_CREATE_CHANNEL, "ai_create_send_message");
+}
+#endif
 
 /* Keep the Matter Network Commissioning driver's staged network in sync with
  * local CLAW edits. Updating only esp_wifi_set_config() leaves that driver
@@ -112,16 +128,32 @@ static esp_err_t load_config(app_config_t *out)
     }
     return err;
 }
-static esp_err_t apply_config(const app_config_t *config)
+static esp_err_t persist_config(const app_config_t *config)
 {
     xSemaphoreTake(s_config_lock, portMAX_DELAY);
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    auto *previous = static_cast<app_config_t *>(calloc(1, sizeof(app_config_t)));
+    const bool have_previous = previous && app_config_load(previous) == ESP_OK;
+#endif
     esp_err_t err = app_config_save(config);
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    if (err == ESP_OK && s_claw_started) {
+        err = app_asr_reload(have_previous ? previous : nullptr, config);
+    }
+    free(previous);
+#endif
     xSemaphoreGive(s_config_lock);
+    return err;
+}
+static esp_err_t apply_config(const app_config_t *config)
+{
+    esp_err_t err = persist_config(config);
     if (err != ESP_OK || !s_claw_started) return err;
     auto *claw = static_cast<app_claw_config_t *>(calloc(1, sizeof(app_claw_config_t)));
     if (!claw) return ESP_ERR_NO_MEM;
     app_config_to_claw(config, claw);
-    err = app_claw_apply_config(claw);
+    /* The full app config was already saved, including fields outside Claw. */
+    err = app_claw_update_config(claw);
     free(claw);
     return err;
 }
@@ -155,11 +187,7 @@ static esp_err_t save_claw(const app_claw_config_t *claw, void *)
     COPY(asr_provider); COPY(asr_api_key); COPY(asr_workspace_id); COPY(asr_language_hint);
     COPY(asr_model); COPY(asr_endpoint);
 #undef COPY
-    if (err == ESP_OK) {
-        xSemaphoreTake(s_config_lock, portMAX_DELAY);
-        err = app_config_save(config);
-        xSemaphoreGive(s_config_lock);
-    }
+    if (err == ESP_OK) err = persist_config(config);
     free(config); return err;
 }
 static bool network_ready(void *)
@@ -466,6 +494,7 @@ extern "C" void app_main()
 #if CONFIG_ESP_BOARD_ESP_MOSAICO
     ESP_ERROR_CHECK(mosaico_bsp_bmgr_init());
 #endif
+    ESP_ERROR_CHECK(trial_auth_init());
     ESP_ERROR_CHECK(esp_board_manager_init());
     ESP_ERROR_CHECK(bridge_core_create(&s_matter_core));
     ESP_ERROR_CHECK(bridge_dev_mngr_create(s_matter_core, &s_matter_dev_mngr));
@@ -479,15 +508,42 @@ extern "C" void app_main()
     ESP_ERROR_CHECK(app_config_load(config)); app_config_to_claw(config, claw);
     ESP_ERROR_CHECK(app_claw_set_save_config_callback(save_claw, nullptr));
     ESP_ERROR_CHECK(app_claw_set_network_ready_callback(network_ready, nullptr));
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    const app_capability_external_group_t ai_create_group = {
+        .group_id = "cap_im_ai_create",
+        .display_name = "Mosaico AI Create",
+        .llm_visible_by_default = false,
+        .prepare = nullptr,
+        .reg = register_ai_create_capability,
+    };
+    ESP_ERROR_CHECK(app_capabilities_register_external_group(&ai_create_group));
+#endif
+#if CONFIG_ESP_BOARD_ESP_MOSAICO && CONFIG_ESP_BOARD_DEV_AUDIO_CODEC_SUPPORT
+    /* The board defers codec initialization until the audio services start. */
+    ESP_ERROR_CHECK(esp_board_manager_init_device_by_name(ESP_BOARD_DEVICE_NAME_AUDIO_DAC));
+    ESP_ERROR_CHECK(esp_board_manager_init_device_by_name(ESP_BOARD_DEVICE_NAME_AUDIO_ADC));
+#endif
     ESP_ERROR_CHECK(app_claw_start(claw)); s_claw_started = true;
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    esp_err_t asr_error = app_asr_reload(nullptr, config);
+    xSemaphoreGive(s_config_lock);
+    if (asr_error != ESP_OK) ESP_LOGW(TAG, "ASR startup failed: %s", esp_err_to_name(asr_error));
+#endif
     free(claw); free(config);
     bridge_memory_log("after CLAW");
     http_server_config_t http{};
     const http_app_config_services_t config_services = {
         .load = load_config, .save = save_config, .ap_config_supported = false,
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+        .asr_supported = true,
+#endif
     };
     http_app_config_init(&config_services);
     http.storage_base_path = claw_paths_get(CLAW_PATH_DATA);
+#if CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE
+    http.asr_supported = true;
+#endif
     http.services.read_config = http_app_config_read;
     http.services.patch_config = http_app_config_patch;
     http.services.get_wifi_status = wifi_status; http.services.restart_device = restart_device;

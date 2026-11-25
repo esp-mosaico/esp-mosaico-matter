@@ -41,6 +41,10 @@ else()
     list(APPEND main_exclude_srcs "app_status_display.c")
 endif()
 
+if(NOT (CONFIG_APP_CLAW_MOSAIC_GSP_ENABLE AND CONFIG_APP_MATTER_HUB_CLAW))
+    list(APPEND main_exclude_srcs "../../common/app_asr.c")
+endif()
+
 idf_component_register(
     SRC_DIRS "." "platform" "../../common"
     EXCLUDE_SRCS ${main_exclude_srcs}
