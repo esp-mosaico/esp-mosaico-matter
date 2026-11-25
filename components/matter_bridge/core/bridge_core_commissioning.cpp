@@ -45,7 +45,7 @@ esp_err_t render_onboarding_code(
     esp_matter::lock::ScopedChipStackLock lock(portMAX_DELAY);
     CHIP_ERROR error = generate(
         span, chip::RendezvousInformationFlags(
-                  on_network_ready() ? chip::RendezvousInformationFlag::kOnNetwork
+                  core->commissioning_on_network_only ? chip::RendezvousInformationFlag::kOnNetwork
                                      : chip::RendezvousInformationFlag::kBLE));
     if (error != CHIP_NO_ERROR) {
         return ESP_FAIL;
@@ -78,6 +78,7 @@ esp_err_t bridge_core_open_commissioning_window(bridge_core_handle_t core)
     if (error != CHIP_NO_ERROR) {
         return ESP_FAIL;
     }
+    core->commissioning_on_network_only = false;
     PrintOnboardingCodes(chip::RendezvousInformationFlag::kBLE);
     return ESP_OK;
 }
@@ -94,6 +95,7 @@ esp_err_t bridge_core_open_on_network_commissioning_window(bridge_core_handle_t 
     CHIP_ERROR error = window.OpenBasicCommissioningWindow(
         chip::System::Clock::Seconds16(180), chip::CommissioningWindowAdvertisement::kDnssdOnly);
     if (error != CHIP_NO_ERROR) return ESP_FAIL;
+    core->commissioning_on_network_only = true;
     PrintOnboardingCodes(chip::RendezvousInformationFlag::kOnNetwork);
     return ESP_OK;
 }
@@ -127,8 +129,13 @@ esp_err_t bridge_core_is_commissioned(bridge_core_handle_t core,
         return ESP_ERR_INVALID_ARG;
     }
     esp_matter::lock::ScopedChipStackLock lock(portMAX_DELAY);
-    *out_commissioned =
-        chip::Server::GetInstance().GetFabricTable().FabricCount() > 0;
+    auto &server = chip::Server::GetInstance();
+    const uint8_t fabric_count = server.GetFabricTable().FabricCount();
+    const auto &fail_safe = server.GetFailSafeContext();
+    const bool pending_first_fabric =
+        (fabric_count == 1) && !fail_safe.IsFailSafeFullyDisarmed() &&
+        fail_safe.AddNocCommandHasBeenInvoked();
+    *out_commissioned = (fabric_count > 0) && !pending_first_fabric;
     return ESP_OK;
 }
 

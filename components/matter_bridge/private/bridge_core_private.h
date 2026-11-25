@@ -12,6 +12,7 @@ struct bridge_core {
     esp_matter::node_t *node;
     uint16_t aggregator_endpoint_id;
     bool started;
+    bool commissioning_on_network_only;
     struct bridge_dev_mngr *dev_mngr;
 };
 

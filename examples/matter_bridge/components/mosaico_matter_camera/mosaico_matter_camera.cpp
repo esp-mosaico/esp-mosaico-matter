@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "esp_check.h"
+#include "esp_cache.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_matter.h"
@@ -21,6 +22,8 @@
 #include "esp_peer.h"
 #include "esp_peer_default.h"
 #include "esp_timer.h"
+#include "driver/ppa.h"
+#include "human_face_detect.hpp"
 #include "bridge_dev_mngr.h"
 #include "mosaico_module_camera.h"
 #include "encoder/esp_video_enc.h"
@@ -28,6 +31,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/task.h"
+#include "linux/videodev2.h"
 
 #include <app/CASESessionManager.h>
 #include <app/server/Server.h>
@@ -52,6 +56,10 @@ constexpr uint16_t kVgaCaptureWidth = 640;
 constexpr uint16_t kVgaCaptureHeight = 480;
 constexpr uint16_t kWidth = 320;
 constexpr uint16_t kHeight = 240;
+constexpr size_t kFrameBufferAlign = 128;
+constexpr size_t kPrivacyMaxBgrBytes = 240U * 320U * 3U;
+constexpr size_t kPrivacyMinBgrBytes = 180U * 240U * 3U;
+constexpr size_t kMaxFaceBoxes = 8;
 static_assert(kHdCaptureHeight == kHeight * 3);
 static_assert(kVgaCaptureHeight == kHeight * 2);
 static_assert((kHdCaptureWidth - kWidth * 3) % 4 == 0);
@@ -59,8 +67,10 @@ constexpr uint16_t kFramesPerSecond = 10;
 constexpr uint32_t kCaptureTimeoutMs = 500;
 constexpr uint32_t kDefaultBitrate = 320000;
 constexpr uint32_t kMaxBitrate = 768000;
-constexpr uint32_t kRawFrameSize = kWidth * kHeight * 2;
-constexpr uint32_t kEncodedBufferSize = 128 * 1024;
+constexpr uint32_t kRawFrameSize = kWidth * kHeight * 3 / 2;
+constexpr uint32_t kEncodedBufferSize = 64 * 1024;
+constexpr size_t kMinDetectFreePsram = 640 * 1024;
+constexpr size_t kMinDetectFreeInternal = 40 * 1024;
 constexpr uint32_t kCameraDeviceType = 0x0142;
 constexpr char kCameraProfileId[] = "mosaico_camera";
 constexpr uint16_t kVideoStreamId = 1;
@@ -119,7 +129,7 @@ esp_err_t FinishDevMngrWait(DevMngrWait *wait, esp_err_t error,
             vSemaphoreDelete(wait->done);
             delete wait;
         }
-    } else if (xSemaphoreTake(wait->done, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    } else if (xSemaphoreTake(wait->done, pdMS_TO_TICKS(10000)) != pdTRUE) {
         error = ESP_ERR_TIMEOUT;
     } else {
         error = wait->result.error;
@@ -141,6 +151,17 @@ public:
     esp_err_t Init(bridge_dev_mngr_handle_t dev_mngr);
     esp_err_t Present(mosaico_module_mgr_slot_t slot, uint16_t board_id, uint32_t serial);
     void Absent(mosaico_module_mgr_slot_t slot);
+    esp_err_t PreviewStart(mosaico_matter_camera_preview_cb_t callback, void *ctx);
+    esp_err_t PreviewStop();
+    void SetPrivacyEnabled(bool enabled)
+    {
+        bool prev = mPrivacyEnabled.exchange(enabled);
+        if (enabled && !prev) {
+            mPrivacyResetPending.store(true, std::memory_order_release);
+        }
+    }
+    bool IsPrivacyEnabled() const { return mPrivacyEnabled.load(); }
+    bool IsReady() const { return mPresent.load(); }
 
     Status VideoStreamAllocate(const VideoStreamStruct & args, uint16_t & out_id) override;
     void OnVideoStreamAllocated(const VideoStreamStruct & stream, StreamAllocationAction action) override;
@@ -206,8 +227,19 @@ private:
     static int PeerMessage(esp_peer_msg_t *message, void *ctx);
     static void PeerTask(void *ctx);
     static void VideoTask(void *ctx);
+    static void EncodeTask(void *ctx);
+    bool StopCapture();
+    bool WakeCamera();
     bool StartVideo();
-    void StopVideo();
+    bool StopVideo();
+    bool EnsurePrivacyResources();
+    void FreePrivacyResources();
+    void FreePrivacyModel();
+    void ApplyPrivacyMosaic(uint8_t *uyvy, uint16_t width, uint16_t height, uint32_t stride);
+    void PaintPrivacyMosaic(uint8_t *uyvy, uint16_t width, uint16_t height, uint32_t stride);
+    void SubmitFaceDetect(uint8_t *uyvy, uint16_t width, uint16_t height, uint32_t stride);
+    void RunFaceDetect();
+    static void DetectTask(void *ctx);
     void QueueOutbound(OutboundMessage::Type, uint16_t, const uint8_t *, size_t);
     static void DeliverOutbound(intptr_t arg);
     void PumpOutbound();
@@ -227,6 +259,15 @@ private:
     uint32_t mSerial = 0;
     uint16_t mEndpointId = 0;
     std::atomic<bool> mPresent{false};
+    // The hot-plug worker alone starts/stops capture and releases mCamera.
+    std::atomic<bool> mCaptureRun{false};
+    std::atomic<bool> mCaptureStopped{true};
+    std::atomic<TaskHandle_t> mCaptureTask{nullptr};
+    SemaphoreHandle_t mPreviewLock = nullptr;
+    std::atomic<bool> mPreviewEnabled{false};
+    mosaico_matter_camera_preview_cb_t mPreviewCallback = nullptr;
+    void *mPreviewContext = nullptr;
+    portMUX_TYPE mMediaLock = portMUX_INITIALIZER_UNLOCKED;
 
     std::vector<VideoStreamStruct> mEmptyVideo;
     std::vector<AudioStreamStruct> mEmptyAudio;
@@ -261,6 +302,36 @@ private:
     bool mCodecRegistered = false;
     uint8_t *mRawFrame = nullptr;
     uint8_t *mEncodedFrame = nullptr;
+    std::atomic<bool> mEncodeRun{false};
+    std::atomic<bool> mEncodeStopped{true};
+    std::atomic<bool> mRawFrameBusy{false};
+    TaskHandle_t mEncodeTask = nullptr; // Owned by the capture task.
+    std::atomic<uint32_t> mEncodedFrames{0};
+    std::atomic<uint32_t> mSentFrames{0};
+    bool mFirstFrameLogged = false;
+
+    std::atomic<bool> mPrivacyEnabled{false};
+    std::atomic<bool> mPrivacyResetPending{false};
+    std::atomic<bool> mDetectRun{false};
+    std::atomic<bool> mDetectBusy{false};
+    std::atomic<TaskHandle_t> mDetectTask{nullptr};
+    std::atomic<unsigned> mFacePublish{0};
+    ppa_client_handle_t mPpa = nullptr;
+    uint8_t *mBgr888 = nullptr;
+    size_t mBgr888Size = 0;
+    HumanFaceDetect *mFaceDetect = nullptr;
+    struct FaceBox { int x0, y0, x1, y1; };
+    FaceBox mFaceSets[2][kMaxFaceBoxes]{};
+    size_t mFaceSetCount[2]{};
+    uint32_t mDetectOutW = 0;
+    uint32_t mDetectOutH = 0;
+    uint16_t mDetectCapW = 0;
+    uint16_t mDetectCapH = 0;
+    int64_t mLastDetectSubmitUs = 0;
+    std::atomic<int64_t> mLastDetectDoneUs{0};
+    int64_t mLastFaceTimeUs = 0;
+    std::atomic<int64_t> mLastPrivacyErrUs{0};
+    size_t mLoggedFaceCount = 0;
 
     std::deque<OutboundMessage> mOutbound;
     bool mOutboundBusy = false;
@@ -286,6 +357,8 @@ void MosaicoMatterCamera::FormatDevice(uint16_t board_id, uint32_t serial,
 esp_err_t MosaicoMatterCamera::Init(bridge_dev_mngr_handle_t dev_mngr)
 {
     if (!dev_mngr || mDevMngr) return ESP_ERR_INVALID_ARG;
+    mPreviewLock = xSemaphoreCreateMutex();
+    if (!mPreviewLock) return ESP_ERR_NO_MEM;
     mDevMngr = dev_mngr;
     snprintf(mProfile.id, sizeof(mProfile.id), "%s", kCameraProfileId);
     mProfile.device_type = kCameraDeviceType;
@@ -425,9 +498,11 @@ esp_err_t MosaicoMatterCamera::ConfigureEndpoint(endpoint_t *endpoint)
 esp_err_t MosaicoMatterCamera::Present(mosaico_module_mgr_slot_t slot, uint16_t board_id, uint32_t serial)
 {
     if (mPresent) return ESP_ERR_INVALID_STATE;
-    if (mCamera) {
+    if (mCamera || !mCaptureStopped) {
         ESP_LOGW(TAG, "Retrying deferred camera cleanup before replug");
-        if (!StopPeer()) {
+        (void)PreviewStop();
+        mCaptureRun = false;
+        if (!StopPeer() || !StopCapture()) {
             ESP_LOGE(TAG, "Camera tasks are still stopping; cannot reclaim the camera slot");
             return ESP_ERR_TIMEOUT;
         }
@@ -489,6 +564,17 @@ esp_err_t MosaicoMatterCamera::Present(mosaico_module_mgr_slot_t slot, uint16_t 
     mDevice = result.definition;
     mEndpointId = result.endpoint_id;
     mSlot = slot;
+    mCaptureRun = true;
+    mCaptureStopped = false;
+    if (xTaskCreateWithCaps(VideoTask, "matter_capture", 16 * 1024, this, 5, nullptr,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+        mCaptureRun = false;
+        mCaptureStopped = true;
+        (void)Deactivate();
+        (void)ReleaseCamera();
+        mSlot = MOSAICO_MODULE_MGR_SLOT_AUTO;
+        return ESP_ERR_NO_MEM;
+    }
     mPresent = true;
     ESP_LOGI(TAG, "Camera %04x-%08lx available on Matter endpoint %u", board_id,
              static_cast<unsigned long>(serial), mEndpointId);
@@ -502,16 +588,24 @@ esp_err_t MosaicoMatterCamera::OpenCamera(mosaico_module_mgr_slot_t slot)
     mosaico_camera_config_t config = MOSAICO_CAMERA_DEFAULT_CONFIG();
     config.slot = slot;
     config.pixel_format = V4L2_PIX_FMT_UYVY;
-    config.buffer_count = 1;
     config.frame_timeout_ms = kCaptureTimeoutMs;
-    const struct { uint16_t width; uint16_t height; } modes[] = {
-        { kHdCaptureWidth, kHdCaptureHeight },
-        { kVgaCaptureWidth, kVgaCaptureHeight },
+    ESP_LOGI(TAG, "Opening camera (PSRAM free=%u largest_dma=%u)",
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA)));
+    const struct { uint16_t width; uint16_t height; uint8_t buffers; } modes[] = {
+        // Open 640x480 with 1 V4L2 buffer (+ driver backup buffer = 1.2 MB)
+        // first so enough contiguous PSRAM remains for the face-privacy
+        // detector model alongside Wi-Fi, Matter, and UI.
+        { kVgaCaptureWidth, kVgaCaptureHeight, 1 },
+        { kHdCaptureWidth, kHdCaptureHeight, 1 },
     };
     esp_err_t err = ESP_ERR_NOT_SUPPORTED;
-    for (const auto &mode : modes) {
+    bool privacy_reclaimed = false;
+    for (int i = 0; i < static_cast<int>(sizeof(modes) / sizeof(modes[0])); ++i) {
+        const auto &mode = modes[i];
         config.width = mode.width;
         config.height = mode.height;
+        config.buffer_count = mode.buffers;
         err = mosaico_camera_new(&config, &mCamera);
         if (err == ESP_OK) {
             err = mosaico_camera_open(mCamera);
@@ -531,8 +625,10 @@ esp_err_t MosaicoMatterCamera::OpenCamera(mosaico_module_mgr_slot_t slot)
         if (err == ESP_OK) {
             mCaptureWidth = mode.width;
             mCaptureHeight = mode.height;
-            ESP_LOGI(TAG, "Camera capture ready at %ux%u with one buffer",
-                     mode.width, mode.height);
+            ESP_LOGI(TAG, "Camera capture ready at %ux%u with %u buffers (PSRAM free=%u largest_dma=%u)",
+                     mode.width, mode.height, mode.buffers,
+                     static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)),
+                     static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA)));
             return ESP_OK;
         }
         ESP_LOGW(TAG, "Camera capture %ux%u unavailable: %s", mode.width,
@@ -541,6 +637,13 @@ esp_err_t MosaicoMatterCamera::OpenCamera(mosaico_module_mgr_slot_t slot)
             ESP_RETURN_ON_ERROR(
                 ReleaseCamera(), TAG,
                 "Release camera after capture setup failure");
+        }
+        if (i == 0 && !privacy_reclaimed && (mFaceDetect || mBgr888)) {
+            ESP_LOGW(TAG, "Reclaiming privacy model PSRAM before retrying %ux%u",
+                     mode.width, mode.height);
+            FreePrivacyModel();
+            privacy_reclaimed = true;
+            --i;
         }
     }
     return err;
@@ -564,11 +667,17 @@ esp_err_t MosaicoMatterCamera::ReleaseCamera()
 void MosaicoMatterCamera::Absent(mosaico_module_mgr_slot_t slot)
 {
     if (!mPresent || slot != mSlot) return;
+    // Block new subscribers before draining the old one; do not hold the
+    // callback mutex while waiting for either worker to stop.
+    mPresent = false;
+    (void)PreviewStop();
+    mCaptureRun = false;
     bool peer_stopped = StopPeer();
+    bool capture_stopped = StopCapture();
     esp_err_t err = Deactivate();
     if (err != ESP_OK) ESP_LOGE(TAG, "Disable camera endpoint: %s", esp_err_to_name(err));
     if (mCamera) {
-        if (!peer_stopped) {
+        if (!peer_stopped || !capture_stopped) {
             ESP_LOGW(TAG, "Camera cleanup deferred until streaming tasks stop");
         } else {
             err = ReleaseCamera();
@@ -873,8 +982,8 @@ CHIP_ERROR MosaicoMatterCamera::StartPeer(const OfferRequestArgs &args, bool ini
     mPeerNode = ScopedNodeId(args.peerNodeId, args.fabricIndex);
     mPeerEndpoint = args.originatingEndpointId;
     esp_peer_default_cfg_t defaults{};
-    defaults.rtp_cfg.send_pool_size = 256 * 1024;
-    defaults.rtp_cfg.send_queue_num = 64;
+    defaults.rtp_cfg.send_pool_size = 96 * 1024;
+    defaults.rtp_cfg.send_queue_num = 32;
     defaults.rtp_cfg.max_resend_count = 3;
     esp_peer_cfg_t cfg{};
     cfg.server_lists = mIceServerCount ? mIceServers : nullptr;
@@ -1066,17 +1175,12 @@ int MosaicoMatterCamera::PeerState(esp_peer_state_t state, void *ctx)
 {
     auto *self = static_cast<MosaicoMatterCamera *>(ctx);
     ESP_LOGI(TAG, "WebRTC peer state: %d", static_cast<int>(state));
-    if (state == ESP_PEER_STATE_CONNECTED) {
+    portENTER_CRITICAL(&self->mMediaLock);
+    if (state == ESP_PEER_STATE_CONNECTED && self->mPeerRun && self->mPresent && self->mCaptureRun) {
         self->mPeerConnected = true;
-        bool expected = false;
-        if (self->mSessionVideo && self->mVideoRun.compare_exchange_strong(expected, true)) {
+        if (self->mSessionVideo) {
             self->mVideoStopped = false;
-            if (xTaskCreateWithCaps(VideoTask, "matter_video", 12 * 1024, self, 5, nullptr,
-                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
-                self->mVideoRun = false;
-                self->mVideoStopped = true;
-                ESP_LOGE(TAG, "Unable to create H.264 video task");
-            }
+            self->mVideoRun = true;
         }
     }
     if (state == ESP_PEER_STATE_DISCONNECTED || state == ESP_PEER_STATE_CONNECT_FAILED ||
@@ -1084,6 +1188,7 @@ int MosaicoMatterCamera::PeerState(esp_peer_state_t state, void *ctx)
         self->mPeerConnected = false;
         self->mVideoRun = false;
     }
+    portEXIT_CRITICAL(&self->mMediaLock);
     return 0;
 }
 
@@ -1144,24 +1249,40 @@ void MosaicoMatterCamera::PeerTask(void *ctx)
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     self->mPeerStopped = true;
-    vTaskDelete(nullptr);
+    vTaskDeleteWithCaps(nullptr);
 }
 
-bool MosaicoMatterCamera::StartVideo()
+bool MosaicoMatterCamera::WakeCamera()
 {
     if (!mCamera) {
         if (!mPresent || OpenCamera(mSlot) != ESP_OK) return false;
     }
-    esp_err_t err = mosaico_camera_start_stream(mCamera);
+    auto start_or_wake = [this]() -> esp_err_t {
+        esp_err_t err = ESP_OK;
+        if (mosaico_camera_is_power_down(mCamera)) {
+            err = mosaico_camera_set_power_down(mCamera, false);
+        }
+        mosaico_camera_pipeline_stats_t stats{};
+        if (err == ESP_OK &&
+            (mosaico_camera_get_pipeline_stats(mCamera, &stats) != ESP_OK || !stats.streaming)) {
+            err = mosaico_camera_start_stream(mCamera);
+        }
+        return err;
+    };
+    esp_err_t err = start_or_wake();
     if (err != ESP_OK) {
         ESP_LOGW(TAG,
                  "Camera stream start failed (%s); rebuilding capture device "
                  "before one retry",
                  esp_err_to_name(err));
-        if (ReleaseCamera() != ESP_OK || OpenCamera(mSlot) != ESP_OK) {
+        if (ReleaseCamera() != ESP_OK) {
             return false;
         }
-        err = mosaico_camera_start_stream(mCamera);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        if (OpenCamera(mSlot) != ESP_OK) {
+            return false;
+        }
+        err = start_or_wake();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Camera stream retry failed: %s",
                      esp_err_to_name(err));
@@ -1169,18 +1290,24 @@ bool MosaicoMatterCamera::StartVideo()
         }
         ESP_LOGI(TAG, "Camera capture device recovered for streaming");
     }
+    mPrivacyResetPending.store(true, std::memory_order_release);
+    return true;
+}
+
+bool MosaicoMatterCamera::StartVideo()
+{
     if (esp_video_enc_register_default() != ESP_VC_ERR_OK) {
-        mosaico_camera_stop_stream(mCamera); return false;
+        return false;
     }
     mCodecRegistered = true;
     esp_video_enc_cfg_t cfg{};
     cfg.codec_type = ESP_VIDEO_CODEC_TYPE_H264;
-    cfg.in_fmt = ESP_VIDEO_CODEC_PIXEL_FMT_YUV422;
+    cfg.in_fmt = ESP_VIDEO_CODEC_PIXEL_FMT_YUV420P;
     cfg.resolution = { kWidth, kHeight };
     cfg.fps = kFramesPerSecond;
     if (esp_video_enc_open(&cfg, &mEncoder) != ESP_VC_ERR_OK) {
         esp_video_enc_unregister_default(); mCodecRegistered = false;
-        mosaico_camera_stop_stream(mCamera); return false;
+        return false;
     }
     uint32_t bitrate = mVideoAllocated ? std::min(mVideoConfig.maxBitRate, kMaxBitrate) : kDefaultBitrate;
     if (!bitrate) bitrate = kDefaultBitrate;
@@ -1189,66 +1316,368 @@ bool MosaicoMatterCamera::StartVideo()
     mRawFrame = static_cast<uint8_t *>(heap_caps_malloc(kRawFrameSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     mEncodedFrame = static_cast<uint8_t *>(heap_caps_malloc(kEncodedBufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!mRawFrame || !mEncodedFrame) { StopVideo(); return false; }
+    mRawFrameBusy.store(false, std::memory_order_release);
+    mEncodedFrames.store(0, std::memory_order_relaxed);
+    mSentFrames.store(0, std::memory_order_relaxed);
+    mFirstFrameLogged = false;
+    mEncodeRun.store(true, std::memory_order_release);
+    mEncodeStopped.store(false, std::memory_order_release);
+    if (xTaskCreateWithCaps(EncodeTask, "matter_encode", 28 * 1024, this, 2, &mEncodeTask,
+                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+        mEncodeStopped.store(true, std::memory_order_release);
+        StopVideo();
+        return false;
+    }
     return true;
 }
 
-void MosaicoMatterCamera::StopVideo()
+static size_t AlignUp(size_t value, size_t alignment)
 {
+    return (value + alignment - 1U) & ~(alignment - 1U);
+}
+
+bool MosaicoMatterCamera::EnsurePrivacyResources()
+{
+    if (!mPpa) {
+        ppa_client_config_t ppa_cfg{};
+        ppa_cfg.oper_type = PPA_OPERATION_SRM;
+        ppa_cfg.max_pending_trans_num = 1;
+        esp_err_t ppa_err = ppa_register_client(&ppa_cfg, &mPpa);
+        if (ppa_err != ESP_OK) {
+            mPpa = nullptr;
+            const int64_t now = esp_timer_get_time();
+            if (!mLastPrivacyErrUs || now - mLastPrivacyErrUs >= 5000000) {
+                mLastPrivacyErrUs = now;
+                ESP_LOGE(TAG, "Privacy PPA client register failed: %s", esp_err_to_name(ppa_err));
+            }
+            return false;
+        }
+    }
+    const size_t preferred = AlignUp(kPrivacyMaxBgrBytes, kFrameBufferAlign);
+    const size_t fallback = AlignUp(kPrivacyMinBgrBytes, kFrameBufferAlign);
+    if (!mBgr888 || mBgr888Size < fallback) {
+        heap_caps_free(mBgr888);
+        mBgr888Size = 0;
+        for (size_t candidate : { preferred, fallback }) {
+            mBgr888 = static_cast<uint8_t *>(heap_caps_aligned_calloc(
+                kFrameBufferAlign, 1, candidate, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
+            if (mBgr888) {
+                mBgr888Size = candidate;
+                break;
+            }
+        }
+        if (!mBgr888) {
+            const int64_t now = esp_timer_get_time();
+            if (!mLastPrivacyErrUs || now - mLastPrivacyErrUs >= 5000000) {
+                mLastPrivacyErrUs = now;
+                ESP_LOGE(TAG, "Privacy detect buffer alloc (%u B) failed", static_cast<unsigned>(fallback));
+            }
+            return false;
+        }
+    }
+    if (!mDetectTask.load()) {
+        mDetectRun.store(true);
+        TaskHandle_t task = nullptr;
+        for (uint32_t stack_bytes : { 32U * 1024U, 24U * 1024U, 16U * 1024U }) {
+            if (xTaskCreateWithCaps(DetectTask, "face_privacy", stack_bytes, this, 1, &task,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
+                break;
+            }
+            task = nullptr;
+        }
+        if (!task) {
+            mDetectRun.store(false);
+            const int64_t now = esp_timer_get_time();
+            if (!mLastPrivacyErrUs || now - mLastPrivacyErrUs >= 5000000) {
+                mLastPrivacyErrUs = now;
+                ESP_LOGE(TAG, "Privacy face detector task creation failed");
+            }
+            return false;
+        }
+        mDetectTask.store(task);
+        ESP_LOGI(TAG, "Privacy face detector started");
+    }
+    return mDetectRun.load();
+}
+
+void MosaicoMatterCamera::FreePrivacyResources()
+{
+    mDetectRun.store(false);
+    for (int i = 0; i < 500 && mDetectTask.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+    if (mDetectTask.load()) {
+        ESP_LOGW(TAG, "Privacy detector task did not stop cleanly before cleanup");
+        return;
+    }
+    mFaceSetCount[0] = mFaceSetCount[1] = 0;
+    mFacePublish.store(0);
+    mLoggedFaceCount = 0;
+    mLastDetectSubmitUs = 0;
+    mLastDetectDoneUs = 0;
+    mDetectBusy.store(false);
+}
+
+void MosaicoMatterCamera::FreePrivacyModel()
+{
+    FreePrivacyResources();
+    if (!mDetectTask.load()) {
+        delete mFaceDetect;
+        mFaceDetect = nullptr;
+        heap_caps_free(mBgr888);
+        mBgr888 = nullptr;
+        mBgr888Size = 0;
+    }
+}
+
+void MosaicoMatterCamera::DetectTask(void *ctx)
+{
+    auto *self = static_cast<MosaicoMatterCamera *>(ctx);
+    TaskHandle_t me = xTaskGetCurrentTaskHandle();
+    while (self->mDetectRun.load()) {
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200)) == 0) continue;
+        if (!self->mDetectRun.load()) break;
+        if (self->mDetectBusy.load(std::memory_order_acquire)) {
+            self->RunFaceDetect();
+            self->mLastDetectDoneUs = esp_timer_get_time();
+        }
+        self->mDetectBusy.store(false, std::memory_order_release);
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    self->mDetectBusy.store(false, std::memory_order_release);
+    TaskHandle_t expected = me;
+    (void)self->mDetectTask.compare_exchange_strong(expected, nullptr);
+    vTaskDeleteWithCaps(nullptr);
+}
+
+void MosaicoMatterCamera::RunFaceDetect()
+{
+    if (!mFaceDetect) {
+        const size_t free_psram = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        const size_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (free_psram < kMinDetectFreePsram || free_internal < kMinDetectFreeInternal) {
+            const int64_t now = esp_timer_get_time();
+            if (!mLastPrivacyErrUs || now - mLastPrivacyErrUs >= 5000000) {
+                mLastPrivacyErrUs = now;
+                ESP_LOGW(TAG, "Deferring face detector load (psram_blk=%u internal=%u)",
+                         static_cast<unsigned>(free_psram), static_cast<unsigned>(free_internal));
+            }
+            return;
+        }
+        mFaceDetect = new (std::nothrow) HumanFaceDetect(
+            static_cast<HumanFaceDetect::model_type_t>(CONFIG_DEFAULT_HUMAN_FACE_DETECT_MODEL), false);
+        if (!mFaceDetect) {
+            ESP_LOGE(TAG, "Privacy HumanFaceDetect alloc failed");
+            return;
+        }
+    }
+    const uint32_t out_w = mDetectOutW;
+    const uint32_t out_h = mDetectOutH;
+    const uint16_t width = mDetectCapW;
+    const uint16_t height = mDetectCapH;
+    if (!out_w || !out_h || !width || !height || !mBgr888) return;
+
+    const int64_t started = esp_timer_get_time();
+    dl::image::img_t img = {
+        .data = mBgr888,
+        .width = static_cast<uint16_t>(out_w),
+        .height = static_cast<uint16_t>(out_h),
+        .pix_type = dl::image::DL_IMAGE_PIX_TYPE_BGR888,
+    };
+    auto &results = mFaceDetect->run(img);
+    const unsigned write = 1U - mFacePublish.load(std::memory_order_relaxed);
+    size_t count = 0;
+    if (!results.empty()) {
+        for (const auto &res : results) {
+            if (count >= kMaxFaceBoxes) break;
+            int bx0 = std::clamp(res.box[0], 0, static_cast<int>(out_w) - 1);
+            int by0 = std::clamp(res.box[1], 0, static_cast<int>(out_h) - 1);
+            int bx1 = std::clamp(res.box[2], 0, static_cast<int>(out_w) - 1);
+            int by1 = std::clamp(res.box[3], 0, static_cast<int>(out_h) - 1);
+            int rx0 = bx0 * static_cast<int>(height) / static_cast<int>(out_w);
+            int ry0 = by0 * static_cast<int>(width) / static_cast<int>(out_h);
+            int rx1 = bx1 * static_cast<int>(height) / static_cast<int>(out_w);
+            int ry1 = by1 * static_cast<int>(width) / static_cast<int>(out_h);
+            int sx0 = static_cast<int>(width) - 1 - ry1;
+            int sx1 = static_cast<int>(width) - 1 - ry0;
+            int sy0 = rx0;
+            int sy1 = rx1;
+            int pad_x = (sx1 - sx0) / 6 + 12;
+            int pad_y = (sy1 - sy0) / 6 + 12;
+            sx0 = std::max(0, sx0 - pad_x);
+            sy0 = std::max(0, sy0 - pad_y);
+            sx1 = std::min(static_cast<int>(width), sx1 + pad_x);
+            sy1 = std::min(static_cast<int>(height), sy1 + pad_y);
+            mFaceSets[write][count++] = { sx0, sy0, sx1, sy1 };
+        }
+        mLastFaceTimeUs = esp_timer_get_time();
+    } else if (esp_timer_get_time() - mLastFaceTimeUs > 700000) {
+        count = 0;
+    } else {
+        return;
+    }
+    mFaceSetCount[write] = count;
+    mFacePublish.store(write, std::memory_order_release);
+    if (count != mLoggedFaceCount) {
+        mLoggedFaceCount = count;
+        ESP_LOGI(TAG, "Privacy mosaic tracking %u face(s), detect %lld ms",
+                 static_cast<unsigned>(count),
+                 static_cast<long long>((esp_timer_get_time() - started) / 1000));
+    }
+}
+
+void MosaicoMatterCamera::SubmitFaceDetect(uint8_t *uyvy, uint16_t width, uint16_t height, uint32_t stride)
+{
+    if (mDetectBusy.load(std::memory_order_acquire)) return;
+    const int64_t now = esp_timer_get_time();
+    const int64_t min_gap_us = mVideoRun.load(std::memory_order_relaxed) ? 400000 : 250000;
+    const int64_t last_done = mLastDetectDoneUs.load(std::memory_order_relaxed);
+    if (last_done && now - last_done < min_gap_us) return;
+    if (mLastDetectSubmitUs && now - mLastDetectSubmitUs < min_gap_us) return;
+    if (!EnsurePrivacyResources()) return;
+    TaskHandle_t task = mDetectTask.load();
+    if (!task || !mBgr888) return;
+
+    uint32_t scale_sixteenths = width > kVgaCaptureWidth ? 4U : 8U;
+    while (scale_sixteenths > 1U) {
+        uint32_t w = (static_cast<uint32_t>(height) * scale_sixteenths) / 16U;
+        uint32_t h = (static_cast<uint32_t>(width) * scale_sixteenths) / 16U;
+        if (w > 0 && h > 0 && static_cast<size_t>(w) * h * 3U <= mBgr888Size) break;
+        --scale_sixteenths;
+    }
+    const uint32_t out_w = (static_cast<uint32_t>(height) * scale_sixteenths) / 16U;
+    const uint32_t out_h = (static_cast<uint32_t>(width) * scale_sixteenths) / 16U;
+    if (!out_w || !out_h || static_cast<size_t>(out_w) * out_h * 3U > mBgr888Size) return;
+    const float scale = static_cast<float>(scale_sixteenths) / 16.0f;
+    ppa_srm_oper_config_t op{};
+    op.in.buffer = uyvy;
+    op.in.pic_w = stride / 2U;
+    op.in.pic_h = height;
+    op.in.block_w = width;
+    op.in.block_h = height;
+    op.in.srm_cm = PPA_SRM_COLOR_MODE_YUV422_UYVY;
+    op.in.yuv_range = PPA_COLOR_RANGE_LIMIT;
+    op.in.yuv_std = PPA_COLOR_CONV_STD_RGB_YUV_BT601;
+    op.out.buffer = mBgr888;
+    op.out.buffer_size = mBgr888Size;
+    op.out.pic_w = out_w;
+    op.out.pic_h = out_h;
+    op.out.srm_cm = PPA_SRM_COLOR_MODE_RGB888;
+    op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
+    op.scale_x = scale;
+    op.scale_y = scale;
+    op.mode = PPA_TRANS_MODE_BLOCKING;
+    esp_err_t ppa_err = ppa_do_scale_rotate_mirror(mPpa, &op);
+    if (ppa_err != ESP_OK) {
+        if (!mLastPrivacyErrUs || now - mLastPrivacyErrUs >= 5000000) {
+            mLastPrivacyErrUs = now;
+            ESP_LOGE(TAG, "Privacy PPA convert failed (%ux%u -> %ux%u): %s",
+                     width, height, static_cast<unsigned>(out_w),
+                     static_cast<unsigned>(out_h), esp_err_to_name(ppa_err));
+        }
+        return;
+    }
+    (void)esp_cache_msync(mBgr888, mBgr888Size,
+                          ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+    mDetectOutW = out_w;
+    mDetectOutH = out_h;
+    mDetectCapW = width;
+    mDetectCapH = height;
+    mLastDetectSubmitUs = now;
+    mDetectBusy.store(true, std::memory_order_release);
+    xTaskNotifyGive(task);
+}
+
+void MosaicoMatterCamera::PaintPrivacyMosaic(uint8_t *uyvy, uint16_t width, uint16_t height, uint32_t stride)
+{
+    const unsigned slot = mFacePublish.load(std::memory_order_acquire);
+    const size_t count = std::min(mFaceSetCount[slot], kMaxFaceBoxes);
+    if (!count) return;
+    FaceBox boxes[kMaxFaceBoxes];
+    memcpy(boxes, mFaceSets[slot], count * sizeof(FaceBox));
+
+    /* 1280-wide frames are scaled to about 0.625x on the 480 display.
+     * 56 source pixels is about 35 screen pixels. Average the block so it
+     * reads as a soft blur instead of a single noisy pixel. */
+    const int block_size = width > kVgaCaptureWidth ? 56 : 36;
+    for (size_t i = 0; i < count; ++i) {
+        const int x0 = boxes[i].x0 & ~1;
+        const int y0 = std::max(0, boxes[i].y0);
+        const int x1 = std::min(static_cast<int>(width), (boxes[i].x1 + 1) & ~1);
+        const int y1 = std::min(static_cast<int>(height), boxes[i].y1);
+        if (x1 <= x0 || y1 <= y0) continue;
+        for (int by = y0; by < y1; by += block_size) {
+            const int bh = std::min(block_size, y1 - by);
+            for (int bx = x0; bx < x1; bx += block_size) {
+                const int bw = std::min(block_size, x1 - bx) & ~1;
+                if (bw <= 0 || bh <= 0) continue;
+                unsigned sum_u = 0, sum_y = 0, sum_v = 0, pairs = 0;
+                for (int py = 0; py < bh; ++py) {
+                    const uint8_t *row = uyvy + static_cast<size_t>(by + py) * stride + static_cast<size_t>(bx) * 2;
+                    for (int px = 0; px < bw; px += 2) {
+                        sum_u += row[px * 2 + 0];
+                        sum_y += row[px * 2 + 1];
+                        sum_y += row[px * 2 + 3];
+                        sum_v += row[px * 2 + 2];
+                        ++pairs;
+                    }
+                }
+                if (!pairs) continue;
+                const uint8_t u = static_cast<uint8_t>(sum_u / pairs);
+                const uint8_t y_val = static_cast<uint8_t>(sum_y / (pairs * 2U));
+                const uint8_t v = static_cast<uint8_t>(sum_v / pairs);
+                for (int py = 0; py < bh; ++py) {
+                    uint8_t *row = uyvy + static_cast<size_t>(by + py) * stride + static_cast<size_t>(bx) * 2;
+                    for (int px = 0; px < bw; px += 2) {
+                        row[px * 2 + 0] = u;
+                        row[px * 2 + 1] = y_val;
+                        row[px * 2 + 2] = v;
+                        row[px * 2 + 3] = y_val;
+                    }
+                }
+            }
+        }
+    }
+    (void)esp_cache_msync(uyvy, static_cast<size_t>(stride) * height, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+}
+
+void MosaicoMatterCamera::ApplyPrivacyMosaic(uint8_t *uyvy, uint16_t width, uint16_t height, uint32_t stride)
+{
+    if (mPrivacyResetPending.exchange(false, std::memory_order_acq_rel)) {
+        mLastDetectSubmitUs = 0;
+        mLastDetectDoneUs = 0;
+    }
+    /* Snapshot the clean frame first. Painting the mosaic before detection
+     * makes the next inference miss the face and the mask flickers. */
+    SubmitFaceDetect(uyvy, width, height, stride);
+    PaintPrivacyMosaic(uyvy, width, height, stride);
+}
+
+bool MosaicoMatterCamera::StopVideo()
+{
+    mEncodeRun.store(false, std::memory_order_release);
+    // The capture task retries cleanup once the encoder has stopped using the buffers.
+    if (!mEncodeStopped.load(std::memory_order_acquire)) return false;
+    mEncodeTask = nullptr;
+    mRawFrameBusy.store(false, std::memory_order_release);
     if (mEncoder) { esp_video_enc_close(mEncoder); mEncoder = nullptr; }
     free(mRawFrame); mRawFrame = nullptr;
     free(mEncodedFrame); mEncodedFrame = nullptr;
-    if (mCamera) mosaico_camera_stop_stream(mCamera);
     if (mCodecRegistered) {
         esp_video_enc_unregister_default();
         mCodecRegistered = false;
     }
+    return true;
 }
 
-void MosaicoMatterCamera::VideoTask(void *ctx)
+void MosaicoMatterCamera::EncodeTask(void *ctx)
 {
     auto *self = static_cast<MosaicoMatterCamera *>(ctx);
-    if (!self->StartVideo()) {
-        ESP_LOGE(TAG, "Unable to start H.264 video pipeline");
-        self->mVideoRun = false;
-    }
     const TickType_t frame_interval = pdMS_TO_TICKS(1000 / kFramesPerSecond);
-    const TickType_t min_idle_time = pdMS_TO_TICKS(10);
-    uint32_t encoded_frames = 0;
-    uint32_t sent_frames = 0;
-    bool first_frame_logged = false;
-    int64_t last_stats_us = esp_timer_get_time();
-    while (self->mVideoRun) {
-        TickType_t frame_start = xTaskGetTickCount();
-        mosaico_camera_frame_t camera_frame{};
-        if (mosaico_camera_get_frame(self->mCamera, &camera_frame) != ESP_OK) {
-            vTaskDelay(min_idle_time);
-            continue;
-        }
-        if (camera_frame.width != self->mCaptureWidth || camera_frame.height != self->mCaptureHeight ||
-            camera_frame.bytes_per_line < self->mCaptureWidth * 2 ||
-            camera_frame.size < camera_frame.bytes_per_line * self->mCaptureHeight) {
-            mosaico_camera_return_frame(self->mCamera, &camera_frame);
-            ESP_LOGW(TAG, "Dropping unexpected camera frame layout");
-            vTaskDelay(min_idle_time);
-            continue;
-        }
-        const uint8_t *src = static_cast<const uint8_t *>(camera_frame.data);
-        const size_t step = self->mCaptureHeight / kHeight;
-        const size_t crop_left = (self->mCaptureWidth - kWidth * step) / 2;
-        /* Center-crop HD to 4:3 when needed, then sample UYVY into YUYV. */
-        for (size_t y = 0; y < kHeight; ++y) {
-            const uint8_t *source_row = src + (y * step) * camera_frame.bytes_per_line + crop_left * 2;
-            uint8_t *target_row = self->mRawFrame + y * kWidth * 2;
-            for (size_t pair = 0; pair < kWidth / 2; ++pair) {
-                const uint8_t *source = source_row + pair * 4 * step;
-                uint8_t *target = target_row + pair * 4;
-                target[0] = source[1];
-                target[1] = (static_cast<unsigned>(source[0]) + source[4]) / 2;
-                target[2] = source[step == 3 ? 7 : 5];
-                target[3] = (static_cast<unsigned>(source[2]) + source[6]) / 2;
-            }
-        }
-        mosaico_camera_return_frame(self->mCamera, &camera_frame);
+    const TickType_t min_idle_time = pdMS_TO_TICKS(15);
+    while (self->mEncodeRun.load(std::memory_order_acquire)) {
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100)) == 0) continue;
+        if (!self->mEncodeRun.load(std::memory_order_acquire)) break;
+        if (!self->mRawFrameBusy.load(std::memory_order_acquire)) continue;
+        TickType_t encode_start_tick = xTaskGetTickCount();
         esp_video_enc_in_frame_t input{};
         input.pts = static_cast<uint32_t>(esp_timer_get_time() / 1000);
         input.data = self->mRawFrame;
@@ -1257,53 +1686,266 @@ void MosaicoMatterCamera::VideoTask(void *ctx)
         output.data = self->mEncodedFrame;
         output.size = kEncodedBufferSize;
         int64_t encode_start_us = esp_timer_get_time();
-        esp_vc_err_t encode_err = esp_video_enc_process(self->mEncoder, &input, &output);
+        esp_vc_err_t encode_err = self->mEncoder
+            ? esp_video_enc_process(self->mEncoder, &input, &output)
+            : ESP_VC_ERR_INVALID_STATE;
+        self->mRawFrameBusy.store(false, std::memory_order_release);
+        if (!self->mEncodeRun.load(std::memory_order_acquire)) break;
         int64_t encode_ms = (esp_timer_get_time() - encode_start_us) / 1000;
         if (encode_ms > 1000) {
             ESP_LOGW(TAG, "Software H.264 encode took %lld ms; requested %u fps may be unsustainable",
                      static_cast<long long>(encode_ms), kFramesPerSecond);
         }
         if (encode_err == ESP_VC_ERR_OK && output.encoded_size) {
-            ++encoded_frames;
+            self->mEncodedFrames.fetch_add(1, std::memory_order_relaxed);
             esp_peer_video_frame_t peer_frame{ output.pts, output.data, static_cast<int>(output.encoded_size) };
-            int send_err = esp_peer_send_video(self->mPeer, &peer_frame);
+            int send_err = self->mVideoRun && self->mPeer
+                ? esp_peer_send_video(self->mPeer, &peer_frame) : ESP_PEER_ERR_NONE;
             if (send_err == ESP_PEER_ERR_NONE) {
-                ++sent_frames;
-                if (!first_frame_logged) {
+                self->mSentFrames.fetch_add(1, std::memory_order_relaxed);
+                if (!self->mFirstFrameLogged) {
                     ESP_LOGI(TAG, "First H.264 frame sent: %u bytes, encode=%lld ms",
                              static_cast<unsigned>(output.encoded_size), static_cast<long long>(encode_ms));
-                    first_frame_logged = true;
+                    self->mFirstFrameLogged = true;
                 }
             } else {
                 ESP_LOGW(TAG, "esp_peer_send_video failed: %d", send_err);
             }
         } else if (encode_err != ESP_VC_ERR_OK) {
             ESP_LOGW(TAG, "H.264 encode failed: %d", encode_err);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
         }
-        int64_t now_us = esp_timer_get_time();
-        if (now_us - last_stats_us >= 5000000) {
-            ESP_LOGI(TAG, "Video pipeline in 5 s: encoded=%lu sent=%lu",
-                     static_cast<unsigned long>(encoded_frames), static_cast<unsigned long>(sent_frames));
-            encoded_frames = 0;
-            sent_frames = 0;
-            last_stats_us = now_us;
-        }
-        // vTaskDelayUntil does not block after a missed deadline. A slow software
-        // encoder would then starve the CPU's idle task and trip its watchdog.
-        TickType_t elapsed = xTaskGetTickCount() - frame_start;
+        TickType_t elapsed = xTaskGetTickCount() - encode_start_tick;
         vTaskDelay(elapsed >= frame_interval ? min_idle_time
                                              : std::max(min_idle_time, frame_interval - elapsed));
     }
-    self->StopVideo();
+    self->mRawFrameBusy.store(false, std::memory_order_release);
+    self->mEncodeStopped.store(true, std::memory_order_release);
+    vTaskDeleteWithCaps(nullptr);
+}
+
+void MosaicoMatterCamera::VideoTask(void *ctx)
+{
+    auto *self = static_cast<MosaicoMatterCamera *>(ctx);
+    self->mCaptureTask = xTaskGetCurrentTaskHandle();
+    bool awake = false; // mosaico_camera_open() leaves streaming stopped until WakeCamera().
+    const TickType_t min_idle_time = pdMS_TO_TICKS(10);
+    unsigned frame_failures = 0;
+    unsigned consecutive_restarts = 0;
+    int64_t next_restart_us = 0;
+    int64_t next_video_start_us = 0;
+    bool recovering = false;
+    int64_t last_stats_us = esp_timer_get_time();
+    while (self->mCaptureRun) {
+        if (self->mEncoder && (!self->mVideoRun || !self->mEncodeRun)) self->StopVideo();
+        portENTER_CRITICAL(&self->mMediaLock);
+        if (!self->mVideoRun && !self->mEncoder) self->mVideoStopped = true;
+        portEXIT_CRITICAL(&self->mMediaLock);
+        if (!self->mVideoRun && !self->mPreviewEnabled) {
+            frame_failures = 0;
+            consecutive_restarts = 0;
+            recovering = false;
+            mosaico_camera_frame_t idle_frame{};
+            if (awake && self->mCamera &&
+                mosaico_camera_get_frame(self->mCamera, &idle_frame) == ESP_OK) {
+                (void)mosaico_camera_return_frame(self->mCamera, &idle_frame);
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+        if (!awake || !self->mCamera) {
+            if (!self->WakeCamera()) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
+            }
+            awake = true;
+        }
+        if (self->mVideoRun && !self->mEncoder) {
+            const int64_t now = esp_timer_get_time();
+            if (now >= next_video_start_us && !self->StartVideo()) {
+                next_video_start_us = now + 2000000;
+                ESP_LOGE(TAG, "Unable to start H.264 video pipeline");
+                portENTER_CRITICAL(&self->mMediaLock);
+                self->mVideoRun = false;
+                self->mVideoStopped = true;
+                portEXIT_CRITICAL(&self->mMediaLock);
+                continue;
+            }
+        }
+        mosaico_camera_frame_t camera_frame{};
+        esp_err_t capture_error = mosaico_camera_get_frame(self->mCamera, &camera_frame);
+        if (capture_error != ESP_OK) {
+            if (capture_error == ESP_ERR_INVALID_SIZE) {
+                vTaskDelay(pdMS_TO_TICKS(5));
+                continue;
+            }
+            const int64_t now = esp_timer_get_time();
+            if (++frame_failures >= 5 && now >= next_restart_us && self->mCaptureRun &&
+                    (self->mPreviewEnabled || self->mVideoRun)) {
+                next_restart_us = now + 4000000;
+                frame_failures = 0;
+                recovering = true;
+                ESP_LOGW(TAG, "Camera frame read failed (%s); restarting capture", esp_err_to_name(capture_error));
+                esp_err_t restart_error = consecutive_restarts < 3
+                    ? mosaico_camera_restart(self->mCamera)
+                    : ESP_FAIL;
+                if (restart_error == ESP_OK) {
+                    ++consecutive_restarts;
+                } else {
+                    if (consecutive_restarts < 3) {
+                        ESP_LOGW(TAG, "Capture restart failed: %s; rebuilding camera",
+                                 esp_err_to_name(restart_error));
+                    } else {
+                        ESP_LOGW(TAG, "Capture stayed stalled after restart; rebuilding camera");
+                    }
+                    consecutive_restarts = 0;
+                    (void)self->ReleaseCamera();
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    awake = false;
+                }
+            }
+            vTaskDelay(min_idle_time);
+            continue;
+        }
+        frame_failures = 0;
+        consecutive_restarts = 0;
+        if (recovering) {
+            ESP_LOGI(TAG, "Camera frame received after capture recovery");
+            recovering = false;
+        }
+        if (camera_frame.pixel_format != V4L2_PIX_FMT_UYVY ||
+            camera_frame.width != self->mCaptureWidth || camera_frame.height != self->mCaptureHeight ||
+            camera_frame.bytes_per_line < self->mCaptureWidth * 2 ||
+            camera_frame.size < camera_frame.bytes_per_line * self->mCaptureHeight) {
+            mosaico_camera_return_frame(self->mCamera, &camera_frame);
+            ESP_LOGW(TAG, "Dropping unexpected camera frame layout");
+            vTaskDelay(min_idle_time);
+            continue;
+        }
+        (void)esp_cache_msync(const_cast<void *>(camera_frame.data), camera_frame.size,
+                              ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+        uint8_t *uyvy = static_cast<uint8_t *>(const_cast<void *>(camera_frame.data));
+        if (self->mPrivacyEnabled.load()) {
+            self->ApplyPrivacyMosaic(uyvy, self->mCaptureWidth, self->mCaptureHeight, camera_frame.bytes_per_line);
+        }
+        // Holding this mutex across the borrowed callback makes stop a drain.
+        // Consumers only copy pixels here; they must never wait for their UI.
+        xSemaphoreTake(self->mPreviewLock, portMAX_DELAY);
+        if (self->mPreviewCallback && self->mCaptureRun && self->mPresent) {
+            self->mPreviewCallback(uyvy,
+                camera_frame.size, camera_frame.width, camera_frame.height,
+                camera_frame.bytes_per_line, self->mPreviewContext);
+        }
+        xSemaphoreGive(self->mPreviewLock);
+        if (self->mEncodeTask && self->mEncodeRun && self->mVideoRun &&
+            !self->mRawFrameBusy.load(std::memory_order_acquire)) {
+            const uint8_t *src = static_cast<const uint8_t *>(camera_frame.data);
+            const size_t src_w = self->mCaptureWidth;
+            const size_t src_h = self->mCaptureHeight;
+            const size_t stride = camera_frame.bytes_per_line;
+            // Rotate 90 degrees counter-clockwise so the phone stream matches the upright board.
+            const size_t crop_rot_w = src_h;
+            const size_t crop_rot_h = std::min(src_w, (crop_rot_w * kHeight) / kWidth);
+            const size_t rot_y_offset = (src_w - crop_rot_h) / 2U;
+            size_t src_row_bytes[kWidth];
+            for (size_t x = 0; x < kWidth; ++x) {
+                src_row_bytes[x] = ((x * crop_rot_w) / kWidth) * stride;
+            }
+            uint8_t *dst_y = self->mRawFrame;
+            uint8_t *dst_u = dst_y + static_cast<size_t>(kWidth) * kHeight;
+            uint8_t *dst_v = dst_u + static_cast<size_t>(kWidth / 2) * (kHeight / 2);
+            for (size_t y = 0; y < kHeight; ++y) {
+                const size_t x_src = src_w - 1U - (rot_y_offset + (y * crop_rot_h) / kHeight);
+                const size_t pair_byte = (x_src & ~1U) * 2U;
+                const size_t luma_byte = (x_src & 1U) ? 3U : 1U;
+                uint8_t *y_row = dst_y + y * kWidth;
+                if ((y & 1U) == 0U) {
+                    uint8_t *u_row = dst_u + (y / 2U) * (kWidth / 2U);
+                    uint8_t *v_row = dst_v + (y / 2U) * (kWidth / 2U);
+                    for (size_t pair = 0; pair < kWidth / 2U; ++pair) {
+                        const uint8_t *p0 = src + src_row_bytes[pair * 2U] + pair_byte;
+                        const uint8_t *p1 = src + src_row_bytes[pair * 2U + 1U] + pair_byte;
+                        y_row[pair * 2U] = p0[luma_byte];
+                        y_row[pair * 2U + 1U] = p1[luma_byte];
+                        u_row[pair] = static_cast<uint8_t>((static_cast<unsigned>(p0[0]) + p1[0]) / 2U);
+                        v_row[pair] = static_cast<uint8_t>((static_cast<unsigned>(p0[2]) + p1[2]) / 2U);
+                    }
+                } else {
+                    for (size_t x = 0; x < kWidth; ++x) {
+                        y_row[x] = src[src_row_bytes[x] + pair_byte + luma_byte];
+                    }
+                }
+            }
+            self->mRawFrameBusy.store(true, std::memory_order_release);
+            xTaskNotifyGive(self->mEncodeTask);
+        }
+        mosaico_camera_return_frame(self->mCamera, &camera_frame);
+        if (self->mVideoRun) {
+            int64_t now_us = esp_timer_get_time();
+            if (now_us - last_stats_us >= 5000000) {
+                uint32_t encoded_frames = self->mEncodedFrames.exchange(0, std::memory_order_relaxed);
+                uint32_t sent_frames = self->mSentFrames.exchange(0, std::memory_order_relaxed);
+                ESP_LOGI(TAG, "Video pipeline in 5 s: encoded=%lu sent=%lu",
+                         static_cast<unsigned long>(encoded_frames), static_cast<unsigned long>(sent_frames));
+                last_stats_us = now_us;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(self->mVideoRun ? 15 : 5));
+    }
+    while (!self->StopVideo()) vTaskDelay(min_idle_time);
+    self->FreePrivacyResources();
+    if (self->mCamera) (void)mosaico_camera_stop_stream(self->mCamera);
     self->mVideoStopped = true;
-    vTaskDelete(nullptr);
+    self->mCaptureTask = nullptr;
+    self->mCaptureStopped = true;
+    vTaskDeleteWithCaps(nullptr);
+}
+
+esp_err_t MosaicoMatterCamera::PreviewStart(mosaico_matter_camera_preview_cb_t callback, void *ctx)
+{
+    if (!callback) return ESP_ERR_INVALID_ARG;
+    if (!mPreviewLock || xTaskGetCurrentTaskHandle() == mCaptureTask.load()) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(mPreviewLock, portMAX_DELAY);
+    esp_err_t error = ESP_OK;
+    if (!mPresent || !mCaptureRun) error = ESP_ERR_NOT_FOUND;
+    else if (mPreviewCallback) error = ESP_ERR_INVALID_STATE;
+    else {
+        mPreviewCallback = callback;
+        mPreviewContext = ctx;
+        mPreviewEnabled = true;
+        mPrivacyResetPending.store(true, std::memory_order_release);
+    }
+    xSemaphoreGive(mPreviewLock);
+    return error;
+}
+
+esp_err_t MosaicoMatterCamera::PreviewStop()
+{
+    if (!mPreviewLock) return ESP_OK;
+    if (xTaskGetCurrentTaskHandle() == mCaptureTask.load()) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(mPreviewLock, portMAX_DELAY);
+    mPreviewEnabled = false;
+    mPreviewCallback = nullptr;
+    mPreviewContext = nullptr;
+    xSemaphoreGive(mPreviewLock);
+    return ESP_OK;
+}
+
+bool MosaicoMatterCamera::StopCapture()
+{
+    mCaptureRun = false;
+    for (int i = 0; i < 250 && !mCaptureStopped; ++i) vTaskDelay(pdMS_TO_TICKS(20));
+    return mCaptureStopped;
 }
 
 bool MosaicoMatterCamera::StopPeer()
 {
+    portENTER_CRITICAL(&mMediaLock);
+    mPeerRun = false;
     mPeerConnected = false;
     mVideoRun = false;
-    mPeerRun = false;
+    portEXIT_CRITICAL(&mMediaLock);
     for (int i = 0; i < 100 && !mVideoStopped; ++i) vTaskDelay(pdMS_TO_TICKS(20));
     for (int i = 0; i < 100 && !mPeerStopped; ++i) vTaskDelay(pdMS_TO_TICKS(20));
     if (!mVideoStopped || !mPeerStopped) {
@@ -1441,4 +2083,30 @@ extern "C" esp_err_t mosaico_matter_camera_present(mosaico_module_mgr_slot_t slo
 extern "C" void mosaico_matter_camera_absent(mosaico_module_mgr_slot_t slot)
 {
     sCamera.Absent(slot);
+}
+
+extern "C" esp_err_t mosaico_matter_camera_preview_start(
+    mosaico_matter_camera_preview_cb_t callback, void *ctx)
+{
+    return sCamera.PreviewStart(callback, ctx);
+}
+
+extern "C" esp_err_t mosaico_matter_camera_preview_stop(void)
+{
+    return sCamera.PreviewStop();
+}
+
+extern "C" void mosaico_matter_camera_set_privacy_enabled(bool enabled)
+{
+    sCamera.SetPrivacyEnabled(enabled);
+}
+
+extern "C" bool mosaico_matter_camera_is_privacy_enabled(void)
+{
+    return sCamera.IsPrivacyEnabled();
+}
+
+extern "C" bool mosaico_matter_camera_is_ready(void)
+{
+    return sCamera.IsReady();
 }

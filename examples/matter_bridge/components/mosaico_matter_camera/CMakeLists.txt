@@ -5,5 +5,5 @@ idf_component_register(
     SRCS "mosaico_matter_camera.cpp" "sdp_compat.cpp"
     INCLUDE_DIRS "include"
     REQUIRES matter_bridge mosaico_module_camera esp_peer esp_video_codec
-    PRIV_REQUIRES esp_matter freertos heap
+    PRIV_REQUIRES esp_matter freertos heap esp_driver_ppa esp_mm espressif__human_face_detect
 )

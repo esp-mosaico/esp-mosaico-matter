@@ -14,7 +14,7 @@ without an LLM connection.
 Supported ESP-Mosaico accessories (detected automatically when connected):
 
 - [Interact module](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/user_guide_interact.html):
-  three separate color lights, a PIR occupancy sensor, and an estimated
+  four separate color lights, a PIR occupancy sensor, and an estimated
   illuminance sensor.
 - [Camera module](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/user_guide_camera.html):
   exposed as a Matter Camera endpoint.
@@ -67,7 +67,7 @@ use different storage layouts.
 
 1. On first boot, select your Wi-Fi network in the on-device setup and enter
    its password. Finish or skip the remaining esp-claw setup steps.
-2. Open **Matter Bridge** from the launcher. It displays a QR code and manual
+2. Open **Matter** from the launcher. It displays a QR code and manual
    setup code for a 180-second commissioning window.
 3. In your Matter controller, add a Matter device and scan the displayed QR
    code or enter the manual code. For on-network commissioning, keep the
@@ -75,15 +75,15 @@ use different storage layouts.
 4. Wait for commissioning to complete. Add accessories or GPIO devices as
    described below, then control them from your Matter controller.
 
-If the window expires, leave and reopen **Matter Bridge**. When the bridge is
-uncommissioned and offline, the app instead offers BLE commissioning so the
+If the window expires, tap **Reopen pairing** or leave and reopen **Matter**.
+When the bridge is uncommissioned and offline, the app offers BLE commissioning so the
 controller can supply Wi-Fi credentials. After setup, saved Wi-Fi credentials
 are reused on subsequent boots. Change them through Settings when needed.
 
 ### 4. Plug in an accessory
 
-- **Interact module:** plug it into either module slot. It creates five
-  devices: three independent color lights, a PIR occupancy sensor, and a
+- **Interact module:** plug it into either module slot. It creates six
+  devices: four independent color lights, a PIR occupancy sensor, and a
   light sensor. Unplugging removes those devices; replugging creates them
   again. Both slots can host interaction modules.
 - **Camera module:** plugging it in creates one Matter Camera endpoint with
@@ -91,7 +91,7 @@ are reused on subsequent boots. Change them through Settings when needed.
   streaming; the same module retains its endpoint identity when plugged back
   in, including after a reboot.
 
-Open **Matter Bridge** to see device status. The serial monitor also reports
+Open **Matter** to see device status. The serial monitor also reports
 the camera's endpoint ID when the module becomes available.
 
 ### 5. Add a GPIO device through esp-claw
@@ -139,8 +139,8 @@ or wiring, remove it and add it again.
 
 ### ESP-Mosaico camera live view
 
-The camera provides H.264 video at **320×240, 10 fps**, with mock Opus silence
-and a fixed JPEG test snapshot. Recording is not supported. Commission the
+The camera provides H.264 video at **320×240**, targeting **10 fps**, with mock
+Opus silence and a fixed JPEG test snapshot. Recording is not supported. Commission the
 bridge into the camera controller's fabric first.
 
 You can use **Samsung SmartThings** to test the camera's live view. Commission
