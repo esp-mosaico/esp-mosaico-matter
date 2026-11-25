@@ -36,7 +36,7 @@ esp_err_t bridge_core_open_commissioning_window(bridge_core_handle_t core);
 esp_err_t bridge_core_open_on_network_commissioning_window(bridge_core_handle_t core);
 
 /** Renders the current QR onboarding payload into caller-owned storage.
- * Selects on-network discovery when STA has an IP, otherwise BLE. */
+ * Uses the selected commissioning window discovery mode; defaults to BLE. */
 esp_err_t bridge_core_get_qr_code(bridge_core_handle_t core, char *out_text,
                                   size_t out_text_len);
 

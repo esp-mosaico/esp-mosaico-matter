@@ -9,6 +9,7 @@ dependencies:
   idf: ">=6.2"
   espressif/esp_peer: "1.5.3"
   espressif/esp_video_codec: "~0.5"
+  espressif/human_face_detect: "^0.5.0"
   mosaico_module_camera:
     path: ../../../../third_party/esp-mosaico-bsp/components/mosaico_module_camera
   matter_bridge:

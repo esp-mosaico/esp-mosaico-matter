@@ -101,7 +101,7 @@ if(MOSAICO_UI_WITH_THREAD_BR)
     idf_component_optional_requires(PRIVATE thread_border_router)
 endif()
 if(MOSAICO_UI_WITH_MATTER_BRIDGE)
-    idf_component_optional_requires(PRIVATE matter_bridge)
+    idf_component_optional_requires(PRIVATE matter_bridge mosaico_matter_camera)
 endif()
 
 # Mosaic loads its dynamic CJK fallback from the read-only SYSTEM filesystem.

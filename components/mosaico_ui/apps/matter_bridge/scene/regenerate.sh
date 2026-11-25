@@ -18,9 +18,10 @@ mkdir -p "$GENERATED_DIR"
 
 "$GSPC" build "${STEM}_480.json" --scene-id 0 \
     --profile "$PROFILE" -o "$OUT"
+mapfile -t FONT_FILES < <(printf '%s\n' "$OUT"/${STEM}_font*.gfb | sort -V)
 "$GSPC" bundle -o "$GENERATED_DIR/${STEM}_480.gspb" \
     "$OUT/${STEM}.gsb" \
-    "$OUT"/${STEM}_font*.gfb \
+    "${FONT_FILES[@]}" \
     $(if [[ -f "$OUT/${STEM}.grb" ]]; then echo "$OUT/${STEM}.grb"; fi)
 
 cp "$OUT/${STEM}_binds.h" "$GENERATED_DIR/${STEM}_binds.h"

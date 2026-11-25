@@ -1,0 +1,78 @@
+--- a/private_include/esp_video_device_common.h
++++ b/private_include/esp_video_device_common.h
+@@ -103,6 +103,7 @@
+     struct esp_video_buffer_element *backup_element;    /*!< Runtime: current backup element (managed by common callbacks) */
+ 
+     esp_cam_ctlr_handle_t cam_ctrl_handle;          /*!< Camera controller handle */
++    bool cam_ctrl_disabled;                       /*!< Teardown progress retained until controller deletion succeeds */
+     bool is_event_subscribed;                       /*!< true: event is subscribed */
+     SemaphoreHandle_t cam_ctlr_mutex;               /*!< Semaphore to wait for restart */
+ 
+--- a/src/device/esp_video_device_common.c
++++ b/src/device/esp_video_device_common.c
+@@ -429,6 +429,7 @@
+     }
+ 
+     ESP_RETURN_ON_ERROR(common->intf->start(common, &common->cam_ctrl_handle), TAG, "device start failed");
++    common->cam_ctrl_disabled = false;
+ 
+     esp_cam_ctlr_evt_cbs_t cam_ctrl_cbs = {
+         .on_get_new_trans = esp_video_device_common_on_get_new_trans,
+@@ -473,22 +474,43 @@
+         return ESP_OK;
+     }
+ 
+-    if (restart_sensor) {
+-        assert(common->cam.sensor);
+-
+-        int flags = 0;
+-        ESP_RETURN_ON_ERROR(esp_cam_sensor_ioctl(common->cam.sensor, ESP_CAM_SENSOR_IOC_S_STREAM, &flags),
+-                            TAG, "failed to stop sensor stream");
+-    }
+-
+-    if (common->intf->stop) {
+-        ESP_RETURN_ON_ERROR(common->intf->stop(common), TAG, "device stop failed");
+-    }
+-    ESP_RETURN_ON_ERROR(esp_cam_ctlr_stop(common->cam_ctrl_handle), TAG, "failed to stop CAM ctlr");
+-    ESP_RETURN_ON_ERROR(esp_cam_ctlr_disable(common->cam_ctrl_handle), TAG, "failed to disable CAM ctlr");
++    if (!common->cam_ctrl_disabled) {
++        if (restart_sensor) {
++            assert(common->cam.sensor);
++
++            int flags = 0;
++            esp_err_t sensor_ret = esp_cam_sensor_ioctl(common->cam.sensor, ESP_CAM_SENSOR_IOC_S_STREAM, &flags);
++            if (sensor_ret != ESP_OK) {
++                /* Unplug can make SCCB unavailable. STREAMOFF must still release the host. */
++                ESP_LOGW(TAG, "failed to stop sensor stream; continuing host cleanup: %s", esp_err_to_name(sensor_ret));
++            }
++        }
++
++        /* Stop callbacks before releasing interface resources they may access. */
++        esp_err_t ret = esp_cam_ctlr_stop(common->cam_ctrl_handle);
++        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
++            ESP_LOGE(TAG, "failed to stop CAM ctlr: %s", esp_err_to_name(ret));
++            return ret;
++        }
++        if (common->intf->stop) {
++            ESP_RETURN_ON_ERROR(common->intf->stop(common), TAG, "device stop failed");
++        }
++        ret = esp_cam_ctlr_disable(common->cam_ctrl_handle);
++        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
++            ESP_LOGE(TAG, "failed to disable CAM ctlr: %s", esp_err_to_name(ret));
++            return ret;
++        }
++        common->cam_ctrl_disabled = true;
++    }
++
++    /* A failed delete retains both the handle and teardown progress. Retrying
++     * must not disable an already-disabled controller or repeat interface cleanup. */
+     ESP_RETURN_ON_ERROR(esp_cam_ctlr_del(common->cam_ctrl_handle), TAG, "failed to delete CAM ctlr");
+     common->cam_ctrl_handle = NULL;
+-
++    common->cam_ctrl_disabled = false;
++
++    /* Successful host cleanup lets esp_video_stop_capture clear started/buffer state,
++     * even if the detached sensor could not acknowledge STREAMOFF. */
+     return ESP_OK;
+ }
+ 

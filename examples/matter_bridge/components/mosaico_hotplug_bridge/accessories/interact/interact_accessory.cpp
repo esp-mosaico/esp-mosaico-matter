@@ -18,10 +18,10 @@
 
 namespace {
 
-constexpr size_t kLedCount = 3;
-constexpr size_t kPir = 3;
-constexpr size_t kLight = 4;
-constexpr size_t kDeviceCount = 5;
+constexpr size_t kLedCount = 4;
+constexpr size_t kPir = kLedCount;
+constexpr size_t kLight = kPir + 1;
+constexpr size_t kDeviceCount = kLight + 1;
 constexpr uint8_t kStripLedCount = 6;
 constexpr int64_t kPirIntervalMs = 100;
 constexpr int64_t kLightIntervalMs = 1000;
@@ -32,12 +32,14 @@ const struct {
     const char *name;
     const char *profile;
     uint32_t device_type;
+    size_t legacy_index;  // Keep existing PIR and LDR identity keys when adding LEDs.
 } kDevices[kDeviceCount] = {
-    {"led0", "Interact LED 1", BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT, 0x010d},
-    {"led1", "Interact LED 2", BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT, 0x010d},
-    {"led2", "Interact LED 3", BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT, 0x010d},
-    {"pir", "Interact PIR", BRIDGE_DEV_MNGR_PROFILE_OCCUPANCY_SENSOR, 0x0107},
-    {"light", "Interact Light Sensor", BRIDGE_DEV_MNGR_PROFILE_ILLUMINANCE_SENSOR, 0x0106},
+    {"led0", "Interact LED 1", BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT, 0x010d, 0},
+    {"led1", "Interact LED 2", BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT, 0x010d, 1},
+    {"led2", "Interact LED 3", BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT, 0x010d, 2},
+    {"led3", "Interact LED 4", BRIDGE_DEV_MNGR_PROFILE_COLOR_LIGHT, 0x010d, 5},
+    {"pir", "Interact PIR", BRIDGE_DEV_MNGR_PROFILE_OCCUPANCY_SENSOR, 0x0107, 3},
+    {"light", "Interact Light Sensor", BRIDGE_DEV_MNGR_PROFILE_ILLUMINANCE_SENSOR, 0x0106, 4},
 };
 
 struct slot_state {
@@ -193,7 +195,7 @@ esp_err_t create_device(const mosaico_hotplug_event_t &event, size_t index,
         event.board_id, event.serial_number, kDevices[index].suffix);
     snprintf(definition.id, sizeof(definition.id), "%s", legacy_name);
     esp_err_t err = mosaico_interact::legacy_id(event.board_id, event.serial_number,
-                                                index, definition.id, false);
+                                                kDevices[index].legacy_index, definition.id, false);
     if (err != ESP_OK) return err;
     char resolved_id[BRIDGE_DEV_MNGR_DEVICE_ID_MAX];
     memcpy(resolved_id, definition.id, sizeof(resolved_id));
@@ -219,7 +221,7 @@ esp_err_t create_device(const mosaico_hotplug_event_t &event, size_t index,
     if (strcmp(definition.id, resolved_id)) {
         // Persist before renaming, so a restart can still find the old ID.
         err = mosaico_interact::legacy_id(event.board_id, event.serial_number,
-                                         index, definition.id, true);
+                                         kDevices[index].legacy_index, definition.id, true);
         if (err != ESP_OK) return err;
     }
     portENTER_CRITICAL(&s_write_lock);

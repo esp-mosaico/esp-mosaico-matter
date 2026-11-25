@@ -7,10 +7,11 @@ inserted or removed.
 The endpoint exposes Camera AV Stream Management with Video, Audio, and
 Snapshot features (`FeatureMap = 0x07`), plus WebRTC Transport Provider/Requestor
 clusters. Video uses the camera; audio and snapshots are synthetic test media.
-It captures 1280x720 UYVY with one capture buffer when memory permits, then
-falls back to 640x480 UYVY. HD
-frames are center-cropped to 960x720; either mode is downsampled to 320x240
-YUYV at 10 fps. It encodes H.264 in software and sends the encoded frames
+It tries 640x480 UYVY first to leave PSRAM for face detection, then tries
+1280x720 UYVY if VGA capture cannot be opened. Both modes use one capture
+buffer. Frames are rotated 90 degrees counter-clockwise, center-cropped,
+and downsampled to 320x240 planar YUV420 at a requested 10 fps. It encodes
+H.264 in software and sends the encoded frames
 through `esp_peer` 1.5.3. Matter carries SDP and ICE signaling; local host
 candidates and controller-provided STUN/TURN servers are supported.
 The bridge maps a controller's named SDP media IDs to the numeric IDs used by
@@ -26,6 +27,22 @@ The board ID, serial number and dynamic endpoint ID are stored in NVS. Unplug
 disables rather than destroys the endpoint, allowing the same module to resume
 the same identity after replug or reboot. Replacing the module or factory
 resetting the bridge erases that identity.
+
+## Local preview and face mosaic
+
+The bridge UI shares the Matter capture pipeline through a single preview
+subscription. Preview callbacks borrow a UYVY frame and must copy or convert
+it before returning. Stopping the subscription waits for an active callback;
+callbacks must not call preview start/stop or wait for the UI.
+
+The UI's privacy toggle enables asynchronous face detection and mosaics
+detected face regions before both local preview and video encoding. This is
+best-effort masking: frames can contain visible faces before detection finishes,
+when detection misses a face, or when memory or hardware conversion is
+unavailable. It does not disable capture or implement the Matter privacy
+attributes. The current processing masks all detected faces; the UI reports
+selected-face and background modes as unavailable. Saved member names are not
+used for face recognition.
 
 ## Mock audio and snapshots
 
@@ -93,7 +110,5 @@ chip-tool cameraavstreammanagement snapshot-stream-deallocate 1 NODE_ID ENDPOINT
 `DynamicConstraintError`. The bridge logs every request's usage, codec,
 channels, sample rate, bitrate, and bit depth, followed by the rejection reason
 or allocated/reused stream ID. Use the `AudioStreamAllocate ep=...` line when
-debugging a controller request. The earlier fixed 20 kbps / 24-bit profile
-could reject other valid mono Opus requests; it is now a range of supported
-bitrates and bit depths. Stereo, AAC, and sample rates other than 48 kHz remain
+debugging a controller request. Stereo, AAC, and sample rates other than 48 kHz remain
 unsupported.
